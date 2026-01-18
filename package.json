@@ -1,0 +1,20 @@
+{
+  "name": "mexc_parser",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "crypto-js": "4.2.0",
+    "dotenv": "17.2.3",
+    "node-telegram-bot-api": "0.67.0",
+    "socket.io-client": "4.8.3",
+    "ws": "8.19.0"
+  }
+}
