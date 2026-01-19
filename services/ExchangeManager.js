@@ -59,12 +59,19 @@ class ExchangeManager {
     for (const position of positions) {
       const contractInfo = await this.getContractInfo(position.symbol);
 
+      // Use fairPrice from API, or fallback to position's fair price, or entry price
+      let currentPrice = contractInfo.fairPrice;
+      if (!currentPrice || currentPrice === 0) {
+        currentPrice = parseFloat(position.fairPrice || position.holdAvgPrice || 0);
+        console.log(`⚠️  Using fallback price for ${position.symbol}: ${currentPrice}`);
+      }
+
       // Debug logging for contract info
-      console.log(`Position: ${position.symbol}, ContractSize: ${contractInfo.contractSize}, Price: ${contractInfo.fairPrice}`);
+      console.log(`Position: ${position.symbol}, ContractSize: ${contractInfo.contractSize}, Price: ${currentPrice}`);
 
       const unrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
         { ...position, contractSize: contractInfo.contractSize },
-        contractInfo.fairPrice,
+        currentPrice,
         this.exchangeType
       );
 
@@ -74,16 +81,15 @@ class ExchangeManager {
         exchangeId: this.exchangeId,
         exchangeName: this.exchangeName,
         contractSize: contractInfo.contractSize,
-        currentPrice: contractInfo.fairPrice,
+        currentPrice: currentPrice,
         unrealizedPnl: unrealizedPnl,
         positionValue: PnLCalculator.calculatePositionValue(
           position.holdVol,
           contractInfo.contractSize,
-          contractInfo.fairPrice,
+          currentPrice,
           this.exchangeType
         )
       });
-      // console.log(this.positions)
       this.ws.subscribeToPrice(position.symbol);
     }
 
@@ -172,7 +178,10 @@ class ExchangeManager {
         );
         const oldUnrealizedPnl = position.unrealizedPnl || 0;
 
-        if (Math.abs(newUnrealizedPnl - oldUnrealizedPnl) > 0.1) {
+        // For very small PnL changes (like BTC with small contract sizes), lower the threshold
+        const threshold = Math.abs(oldUnrealizedPnl) < 1 ? 0.01 : 0.1;
+
+        if (Math.abs(newUnrealizedPnl - oldUnrealizedPnl) > threshold) {
           position.currentPrice = price;
           position.unrealizedPnl = newUnrealizedPnl;
           position.positionValue = PnLCalculator.calculatePositionValue(

@@ -44,11 +44,26 @@ class PnLCalculator {
   
   static formatPnL(pnl) {
     const sign = pnl >= 0 ? '+' : '';
-    return `${sign}$${pnl.toFixed(4)}`;
+    const absPnl = Math.abs(pnl);
+
+    // For very small values (less than 0.01), use more decimal places
+    if (absPnl < 0.01 && absPnl > 0) {
+      return `${sign}$${parseFloat(pnl.toFixed(6))}`;
+    }
+
+    // Remove trailing zeros after decimal point
+    return `${sign}$${parseFloat(pnl.toFixed(4))}`;
   }
   
   static formatPercentage(ratio) {
     return `${(ratio * 100).toFixed(2)}%`;
+  }
+
+  static formatPrice(price, decimals = 4) {
+    if (price === null || price === undefined || price === 0) {
+      return 'N/A';
+    }
+    return `$${parseFloat(parseFloat(price).toFixed(decimals))}`;
   }
 }
 

@@ -69,11 +69,11 @@ class MessageFormatter {
         message += `  ${side} | ${mode} | ${pos.leverage}x\n`;
         message += `  💰 Size: ${pos.holdVol} contracts\n`;
         message += `  💵 Value: $${posValue.toFixed(2)}\n`;
-        message += `  📈 Entry: $${pos.holdAvgPrice}\n`;
-        message += `  📊 Current: $${pos.currentPrice || 'N/A'}\n`;
+        message += `  📈 Entry: ${PnLCalculator.formatPrice(pos.holdAvgPrice)}\n`;
+        message += `  📊 Current: ${PnLCalculator.formatPrice(pos.currentPrice)}\n`;
         message += `  ${unrealizedPnlEmoji} Unrealized: ${PnLCalculator.formatPnL(unrealizedPnl)}\n`;
         message += `  ${realizedPnlEmoji} Realized: ${PnLCalculator.formatPnL(realizedPnl)}\n`;
-        message += `  🔴 Liq: $${pos.liquidatePrice || 'N/A'}\n`;
+        message += `  🔴 Liq: ${PnLCalculator.formatPrice(pos.liquidatePrice)}\n`;
 
         if (idx < positions.length - 1) {
           message += `  ─────────────────────\n`;
@@ -92,7 +92,7 @@ class MessageFormatter {
         message += `  <b>📊 ${symbol} Summary:</b>\n`;
         message += `  Total Size: ${totalSize} contracts\n`;
         message += `  Total Value: $${totalValue.toFixed(2)}\n`;
-        message += `  Avg Entry: $${avgEntry.toFixed(4)}\n`;
+        message += `  Avg Entry: ${PnLCalculator.formatPrice(avgEntry)}\n`;
         message += `  ${unrealizedEmoji} Unrealized: ${PnLCalculator.formatPnL(totalUnrealizedPnL)}\n`;
         message += `  ${realizedEmoji} Realized: ${PnLCalculator.formatPnL(totalRealizedPnL)}\n`;
         message += `  ${totalEmoji} Total PnL: ${PnLCalculator.formatPnL(totalPnL)}\n`;
@@ -119,7 +119,7 @@ class MessageFormatter {
         message += `<b>Symbol:</b> ${position.symbol}\n`;
         message += `<b>Side:</b> ${side}\n`;
         message += `<b>Size:</b> ${position.holdVol} contracts\n`;
-        message += `<b>Entry:</b> $${position.holdAvgPrice}\n`;
+        message += `<b>Entry:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
         message += `<b>Leverage:</b> ${position.leverage}x\n`;
         break;
 
@@ -135,8 +135,8 @@ class MessageFormatter {
         message += `<b>Symbol:</b> ${position.symbol}\n`;
         message += `<b>Side:</b> ${side}\n`;
         message += `<b>Size:</b> ${position.holdVol} contracts\n`;
-        message += `<b>Entry:</b> $${position.holdAvgPrice}\n`;
-        message += `<b>Close Price:</b> $${position.currentPrice || 'N/A'}\n`;
+        message += `<b>Entry:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
+        message += `<b>Close Price:</b> ${PnLCalculator.formatPrice(position.currentPrice)}\n`;
         message += `${closedPnlEmoji} <b>Realized PnL:</b> ${PnLCalculator.formatPnL(closedRealizedPnl)} (${pnlPercentage}%)\n`;
         break;
 
