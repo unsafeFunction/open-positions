@@ -126,8 +126,10 @@ class MessageFormatter {
       case 'closed':
         const closedRealizedPnl = position.realised || 0;
         const closedPnlEmoji = closedRealizedPnl >= 0 ? '💚' : '❤️';
-        const pnlPercentage = position.holdAvgPrice > 0
-          ? ((closedRealizedPnl / (position.holdVol * position.holdAvgPrice)) * 100).toFixed(2)
+        // Calculate percentage based on position value (including contract size)
+        const positionValue = position.holdVol * (position.contractSize || 1) * position.holdAvgPrice;
+        const pnlPercentage = positionValue > 0
+          ? ((closedRealizedPnl / positionValue) * 100).toFixed(2)
           : '0.00';
 
         message = `🔴 <b>POSITION CLOSED</b>\n\n`;

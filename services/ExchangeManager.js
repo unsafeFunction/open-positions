@@ -129,8 +129,8 @@ class ExchangeManager {
       console.log(`🔴 Position closed: ${data.symbol} (Exchange: ${this.exchangeId})`);
       if (this.telegram) {
         this.telegram.sendNotification('closed', {
-          ...data,
           ...prevPosition,
+          ...data,
           exchangeId: this.exchangeId,
           exchangeName: this.exchangeName
         });
