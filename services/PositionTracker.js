@@ -10,6 +10,7 @@ class PositionTracker {
     this.exchangeManagers = new Map();
     this.telegram = null;
     this.allPositions = new Map(); // Aggregated positions from all exchanges
+    this.telegramUpdateTimeout = null; // Debounce timer for telegram updates
   }
 
   async start() {
@@ -118,9 +119,18 @@ class PositionTracker {
   }
 
   async updateTelegramMessage() {
-    if (this.telegram && this.allPositions.size > 0) {
-      await this.telegram.sendOrUpdatePositions(this.allPositions);
+    // Clear existing timeout to debounce rapid updates
+    if (this.telegramUpdateTimeout) {
+      clearTimeout(this.telegramUpdateTimeout);
     }
+
+    // Set new timeout to batch updates within 500ms window
+    this.telegramUpdateTimeout = setTimeout(async () => {
+      if (this.telegram && this.allPositions.size > 0) {
+        await this.telegram.sendOrUpdatePositions(this.allPositions);
+      }
+      this.telegramUpdateTimeout = null;
+    }, 500);
   }
 
   removeExchange(exchangeId) {

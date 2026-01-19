@@ -7,5 +7,9 @@ module.exports = {
   mexc: {
     wsUrl: 'wss://contract.mexc.com/edge',
     restUrl: 'https://contract.mexc.com/api/v1'
+  },
+  gate: {
+    wsUrl: 'wss://fx-ws.gateio.ws/v4/ws/usdt',
+    restUrl: 'https://api.gateio.ws'
   }
 };

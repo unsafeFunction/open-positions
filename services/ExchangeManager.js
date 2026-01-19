@@ -1,5 +1,7 @@
 const MexcClient = require('./MexcClient');
 const MexcWebSocket = require('./MexcWebSocket');
+const GateClient = require('./GateClient');
+const GateWebSocket = require('./GateWebSocket');
 const PnLCalculator = require('../utils/calculator');
 
 class ExchangeManager {
@@ -23,6 +25,9 @@ class ExchangeManager {
     if (this.exchangeType === 'MEXC') {
       this.client = new MexcClient(config.exchange_api_key, config.exchange_secret);
       this.ws = new MexcWebSocket(config.exchange_api_key, config.exchange_secret);
+    } else if (this.exchangeType === 'GATE') {
+      this.client = new GateClient(config.exchange_api_key, config.exchange_secret);
+      this.ws = new GateWebSocket(config.exchange_api_key, config.exchange_secret);
     }
     // Telegram instance is now passed via constructor, no need to create it here
   }
@@ -51,15 +56,18 @@ class ExchangeManager {
     console.log(`📊 Loading initial positions for exchange ${this.exchangeId}...`);
 
     const positions = await this.client.fetchOpenPositions();
-
     for (const position of positions) {
       const contractInfo = await this.getContractInfo(position.symbol);
 
+      // Debug logging for contract info
+      console.log(`Position: ${position.symbol}, ContractSize: ${contractInfo.contractSize}, Price: ${contractInfo.fairPrice}`);
+
       const unrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
         { ...position, contractSize: contractInfo.contractSize },
-        contractInfo.fairPrice
+        contractInfo.fairPrice,
+        this.exchangeType
       );
-      
+
       const key = `${position.symbol}_${position.positionId}`;
       this.positions.set(key, {
         ...position,
@@ -71,9 +79,10 @@ class ExchangeManager {
         positionValue: PnLCalculator.calculatePositionValue(
           position.holdVol,
           contractInfo.contractSize,
-          contractInfo.fairPrice
+          contractInfo.fairPrice,
+          this.exchangeType
         )
-      }); 
+      });
       // console.log(this.positions)
       this.ws.subscribeToPrice(position.symbol);
     }
@@ -156,7 +165,11 @@ class ExchangeManager {
 
     this.positions.forEach((position, key) => {
       if (key.startsWith(symbol + '_')) {
-        const newUnrealizedPnl = PnLCalculator.calculateUnrealizedPnL(position, price);
+        const newUnrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
+          position,
+          price,
+          this.exchangeType
+        );
         const oldUnrealizedPnl = position.unrealizedPnl || 0;
 
         if (Math.abs(newUnrealizedPnl - oldUnrealizedPnl) > 0.1) {
@@ -165,7 +178,8 @@ class ExchangeManager {
           position.positionValue = PnLCalculator.calculatePositionValue(
             position.holdVol,
             position.contractSize,
-            price
+            price,
+            this.exchangeType
           );
           updated = true;
         }

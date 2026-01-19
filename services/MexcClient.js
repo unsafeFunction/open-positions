@@ -49,15 +49,25 @@ class MexcClient {
     try {
       const response = await fetch(`${this.restUrl}/contract/detail?symbol=${symbol}`);
       const result = await response.json();
-      
+
       if (result.success && result.data) {
+        // For MEXC, contractSize is the face value per contract
+        // fairPrice might not be in this endpoint, use indexPrice or lastPrice
+        const fairPrice = parseFloat(
+          result.data.fairPrice ||
+          result.data.indexPrice ||
+          result.data.lastPrice ||
+          0
+        );
+
         return {
           contractSize: parseFloat(result.data.contractSize || 1),
-          fairPrice: parseFloat(result.data.fairPrice || 0)
+          fairPrice: fairPrice
         };
       }
       return { contractSize: 1, fairPrice: 0 };
     } catch (error) {
+      console.error(`Error fetching MEXC contract details for ${symbol}:`, error.message);
       return { contractSize: 1, fairPrice: 0 };
     }
   }

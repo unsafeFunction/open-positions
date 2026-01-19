@@ -18,10 +18,21 @@ class MessageFormatter {
       groupedBySymbol.get(symbol).push(position);
     }
 
+    // Sort symbols alphabetically
+    const sortedSymbols = Array.from(groupedBySymbol.keys()).sort();
+
     let message = '<b>📊 OPEN POSITIONS</b>\n';
     message += '═══════════════════════════\n\n';
 
-    for (const [symbol, positions] of groupedBySymbol) {
+    for (const symbol of sortedSymbols) {
+      const positions = groupedBySymbol.get(symbol);
+
+      // Sort positions within each symbol by exchange name
+      positions.sort((a, b) => {
+        const nameA = a.exchangeName || `Exchange ${a.exchangeId}`;
+        const nameB = b.exchangeName || `Exchange ${b.exchangeId}`;
+        return nameA.localeCompare(nameB);
+      });
       message += `<b>💎 ${symbol}</b>\n`;
       message += '━━━━━━━━━━━━━━━━━━━━━━\n';
 
@@ -44,25 +55,24 @@ class MessageFormatter {
         const size = parseFloat(pos.holdVol) || 0;
         const entry = parseFloat(pos.holdAvgPrice) || 0;
 
-        // Accumulate for summary
         totalSize += size;
         totalValue += posValue;
         weightedEntrySum += entry * size;
         totalUnrealizedPnL += unrealizedPnl;
         totalRealizedPnL += realizedPnl;
 
-        const pnlEmoji = totalPnl >= 0 ? '💚' : '❤️';
+        const unrealizedPnlEmoji = unrealizedPnl >= 0 ? '💚' : '❤️';
+        const realizedPnlEmoji = realizedPnl >= 0 ? '💰' : '💸';
 
-        if (positions.length > 1) {
-          message += `  <b>${exchangeName}</b>\n`;
-        }
+        message += `  <b>${exchangeName}</b>\n`;
 
         message += `  ${side} | ${mode} | ${pos.leverage}x\n`;
         message += `  💰 Size: ${pos.holdVol} contracts\n`;
         message += `  💵 Value: $${posValue.toFixed(2)}\n`;
         message += `  📈 Entry: $${pos.holdAvgPrice}\n`;
         message += `  📊 Current: $${pos.currentPrice || 'N/A'}\n`;
-        message += `  ${pnlEmoji} PnL: ${PnLCalculator.formatPnL(totalPnl)}\n`;
+        message += `  ${unrealizedPnlEmoji} Unrealized: ${PnLCalculator.formatPnL(unrealizedPnl)}\n`;
+        message += `  ${realizedPnlEmoji} Realized: ${PnLCalculator.formatPnL(realizedPnl)}\n`;
         message += `  🔴 Liq: $${pos.liquidatePrice || 'N/A'}\n`;
 
         if (idx < positions.length - 1) {
@@ -74,14 +84,18 @@ class MessageFormatter {
       if (positions.length > 1) {
         const avgEntry = totalSize > 0 ? (weightedEntrySum / totalSize) : 0;
         const totalPnL = totalUnrealizedPnL + totalRealizedPnL;
-        const summaryEmoji = totalPnL >= 0 ? '💰' : '💸';
+        const unrealizedEmoji = totalUnrealizedPnL >= 0 ? '💚' : '❤️';
+        const realizedEmoji = totalRealizedPnL >= 0 ? '💰' : '💸';
+        const totalEmoji = totalPnL >= 0 ? '💰' : '💸';
 
         message += '\n';
         message += `  <b>📊 ${symbol} Summary:</b>\n`;
         message += `  Total Size: ${totalSize} contracts\n`;
         message += `  Total Value: $${totalValue.toFixed(2)}\n`;
         message += `  Avg Entry: $${avgEntry.toFixed(4)}\n`;
-        message += `  ${summaryEmoji} Total PnL: ${PnLCalculator.formatPnL(totalPnL)}\n`;
+        message += `  ${unrealizedEmoji} Unrealized: ${PnLCalculator.formatPnL(totalUnrealizedPnL)}\n`;
+        message += `  ${realizedEmoji} Realized: ${PnLCalculator.formatPnL(totalRealizedPnL)}\n`;
+        message += `  ${totalEmoji} Total PnL: ${PnLCalculator.formatPnL(totalPnL)}\n`;
       }
 
       message += '\n';
@@ -110,15 +124,20 @@ class MessageFormatter {
         break;
 
       case 'closed':
-        const realizedPnl = position.realised || 0;
-        const pnlEmoji = realizedPnl >= 0 ? '💚' : '❤️';
+        const closedRealizedPnl = position.realised || 0;
+        const closedPnlEmoji = closedRealizedPnl >= 0 ? '💚' : '❤️';
+        const pnlPercentage = position.holdAvgPrice > 0
+          ? ((closedRealizedPnl / (position.holdVol * position.holdAvgPrice)) * 100).toFixed(2)
+          : '0.00';
+
         message = `🔴 <b>POSITION CLOSED</b>\n\n`;
         message += `<b>Exchange:</b> ${exchangeName}\n`;
         message += `<b>Symbol:</b> ${position.symbol}\n`;
         message += `<b>Side:</b> ${side}\n`;
         message += `<b>Size:</b> ${position.holdVol} contracts\n`;
         message += `<b>Entry:</b> $${position.holdAvgPrice}\n`;
-        message += `${pnlEmoji} <b>Realized PnL:</b> ${PnLCalculator.formatPnL(realizedPnl)}\n`;
+        message += `<b>Close Price:</b> $${position.currentPrice || 'N/A'}\n`;
+        message += `${closedPnlEmoji} <b>Realized PnL:</b> ${PnLCalculator.formatPnL(closedRealizedPnl)} (${pnlPercentage}%)\n`;
         break;
 
       case 'modified':
