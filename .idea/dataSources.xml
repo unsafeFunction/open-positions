@@ -8,5 +8,22 @@
       <jdbc-url>jdbc:postgresql://localhost:5432/exchanges_poses</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="MySQL" uuid="dd66461e-49e2-4c2f-81db-c7f3aa7e5194">
+      <driver-ref>mysql.8</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>com.mysql.cj.jdbc.Driver</jdbc-driver>
+      <jdbc-url>jdbc:mysql://u23951_oRujEN8obb:%2B4!gIX%40Rs6GZm8zHY%3DVeffnm@f1.play2go.cloud:3306/s23951_positions</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
+    <data-source source="LOCAL" name="s23951_positions@mysql.play2go.cloud" uuid="7f47d963-bfe8-44ae-8f61-0ff83cd5d315">
+      <driver-ref>mysql.8</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>com.mysql.cj.jdbc.Driver</jdbc-driver>
+      <jdbc-url>jdbc:mysql://mysql.play2go.cloud:3306/s23951_positions</jdbc-url>
+      <jdbc-additional-properties>
+        <property name="database.introspection.mysql.dbe5060" value="true" />
+      </jdbc-additional-properties>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>

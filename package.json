@@ -1,12 +1,24 @@
 {
   "name": "mexc_parser",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Multi-exchange position tracker for MEXC and Gate.io",
+  "main": "main.js",
   "scripts": {
+    "start": "node main.js",
+    "dev": "NODE_ENV=development node main.js",
+    "build": "rollup -c && chmod +x dist/bundle.js && npm run build:copy-deps && echo '✅ Production build created in dist/'",
+    "build:copy-deps": "cp -r node_modules dist/ 2>/dev/null || echo 'Skipping node_modules copy'",
+    "build:start": "cd dist && node bundle.js",
+    "clean": "rm -rf dist",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "mexc",
+    "gate.io",
+    "crypto",
+    "position-tracker",
+    "telegram-bot"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
@@ -16,5 +28,12 @@
     "node-telegram-bot-api": "0.67.0",
     "socket.io-client": "4.8.3",
     "ws": "8.19.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "25.0.8",
+    "@rollup/plugin-json": "6.1.0",
+    "@rollup/plugin-node-resolve": "15.3.1",
+    "@rollup/plugin-terser": "0.4.4",
+    "rollup": "4.55.2"
   }
 }

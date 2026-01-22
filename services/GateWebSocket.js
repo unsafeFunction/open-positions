@@ -8,7 +8,7 @@ class GateWebSocket extends EventEmitter {
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
     this.settle = 'usdt';
-    this.wsUrl = `wss://fx-ws.gateio.ws/v4/ws/${this.settle}`; // Include settle in URL
+    this.wsUrl = `wss://fx-ws.gateio.ws/v4/ws/${this.settle}`;
     this.ws = null;
     this.pingInterval = null;
     this.priceSubscriptions = new Set();
@@ -20,11 +20,9 @@ class GateWebSocket extends EventEmitter {
   }
 
   connect() {
-    console.log('🔌 Connecting to Gate.io WebSocket...');
     this.ws = new WebSocket(this.wsUrl);
 
     this.ws.on('open', () => {
-      console.log('✅ Connected to Gate.io WebSocket');
       this.authenticate();
       this.startPing();
     });
@@ -34,19 +32,23 @@ class GateWebSocket extends EventEmitter {
     });
 
     this.ws.on('error', (error) => {
-      console.error('❌ Gate.io WebSocket Error:', error.message);
+      console.error('Gate.io WebSocket Error:', error.message);
     });
 
     this.ws.on('close', () => {
-      console.log('🔴 Gate.io WebSocket Disconnected');
       this.stopPing();
       setTimeout(() => this.connect(), 5000);
     });
   }
 
   authenticate() {
+    this.subscribeToChannel('futures.positions');
+    this.subscribeToChannel('futures.orders');
+    this.subscribeToChannel('futures.autoorders');
+  }
+
+  subscribeToChannel(channel) {
     const timestamp = Math.floor(Date.now() / 1000);
-    const channel = 'futures.positions';
     const event = 'subscribe';
     const signature = this.generateSignature(channel, event, timestamp);
 
@@ -54,7 +56,7 @@ class GateWebSocket extends EventEmitter {
       time: timestamp,
       channel: channel,
       event: event,
-      payload: ['!all'], // Subscribe to all positions
+      payload: ['!all'],
       auth: {
         method: 'api_key',
         KEY: this.apiKey,
@@ -82,34 +84,24 @@ class GateWebSocket extends EventEmitter {
     try {
       const message = JSON.parse(data);
 
-      // Handle pong
       if (message.event === 'update' && message.channel === 'futures.pong') {
         return;
       }
 
-      // Handle authentication response
-      if (message.event === 'subscribe' && message.channel === 'futures.positions') {
-        if (message.error === null || message.error === undefined) {
-          console.log('✅ Gate.io authentication successful');
+      if (message.event === 'subscribe') {
+        if (message.channel === 'futures.positions' && (message.error === null || message.error === undefined)) {
           this.emit('authenticated');
-        } else {
-          console.error('❌ Gate.io authentication failed:', message.error);
         }
         return;
       }
 
-      // Handle position updates
       if (message.event === 'update' && message.channel === 'futures.positions') {
         if (message.result && Array.isArray(message.result)) {
           message.result.forEach(position => {
             const size = parseFloat(position.size);
-            // Gate.io margin type: cross_leverage_limit = 0 means isolated, > 0 means cross
             const crossLeverageLimit = parseFloat(position.cross_leverage_limit || 0);
             const isIsolated = crossLeverageLimit === 0;
 
-            // Get actual leverage
-            // For cross margin: use cross_leverage_limit
-            // For isolated: use leverage field
             let actualLeverage;
             if (!isIsolated && crossLeverageLimit > 0) {
               actualLeverage = crossLeverageLimit;
@@ -135,7 +127,50 @@ class GateWebSocket extends EventEmitter {
         }
       }
 
-      // Handle ticker (price) updates
+      if (message.event === 'update' && message.channel === 'futures.orders') {
+        if (message.result && Array.isArray(message.result)) {
+          message.result.forEach(order => {
+            const orderData = {
+              symbol: order.contract,
+              orderId: order.id,
+              vol: Math.abs(parseFloat(order.size)),
+              price: parseFloat(order.price),
+              side: this.mapGateSide(order.size, order.is_close),
+              leverage: parseFloat(order.leverage || 0),
+              state: this.mapGateOrderStatus(order.status, order.finish_as),
+              dealVol: Math.abs(parseFloat(order.size)) - Math.abs(parseFloat(order.left || 0)),
+              category: 1
+            };
+            this.emit('orderUpdate', orderData);
+          });
+        }
+      }
+
+      if (message.event === 'update' && message.channel === 'futures.autoorders') {
+        if (message.result && Array.isArray(message.result)) {
+          message.result.forEach(order => {
+            const size = order.initial?.size || order.size || 0;
+            const price = order.initial?.price || order.price || 0;
+            const triggerPrice = parseFloat(order.trigger?.price || order.trigger || 0);
+            const triggerRule = order.trigger?.rule || order.trigger_rule;
+
+            const orderData = {
+              symbol: order.initial?.contract || order.contract,
+              orderId: order.id,
+              vol: Math.abs(parseFloat(size)),
+              price: parseFloat(price),
+              triggerPrice: triggerPrice,
+              triggerType: 3,
+              side: this.mapGateSide(size, order.is_close),
+              leverage: parseFloat(order.leverage || 0),
+              state: this.mapGateAutoOrderStatus(order.status, order.finish_as),
+              trend: this.mapGateTrend(triggerRule)
+            };
+            this.emit('planOrderUpdate', orderData);
+          });
+        }
+      }
+
       if (message.event === 'update' && message.channel === 'futures.tickers') {
         if (message.result && Array.isArray(message.result)) {
           message.result.forEach(ticker => {
@@ -148,8 +183,48 @@ class GateWebSocket extends EventEmitter {
       }
 
     } catch (error) {
-      console.error('Error parsing Gate.io message:', error);
+      console.error('Error parsing Gate.io message:', error.message);
     }
+  }
+
+  mapGateSide(size, isClose) {
+    const isLong = parseFloat(size) > 0;
+    if (isClose) {
+      return isLong ? 2 : 4;
+    }
+    return isLong ? 1 : 3;
+  }
+
+  mapGateOrderStatus(status, finishAs) {
+    if (status === 'open') return 2;
+    if (status === 'finished') {
+      if (finishAs === 'filled' || finishAs === 'ioc') return 3;
+      if (finishAs === 'cancelled' || finishAs === 'liquidated' ||
+          finishAs === 'reduce_only' || finishAs === 'position_close' ||
+          finishAs === 'stp' || finishAs === 'reduce_out' ||
+          finishAs === 'auto_deleveraging') return 4;
+      return 3;
+    }
+    return 2;
+  }
+
+  mapGateAutoOrderStatus(status) {
+    if (status === 'open') return 1;
+    if (status === 'finished' || status === 'succeeded') return 2;
+    if (status === 'cancelled') return 3;
+    return 1;
+  }
+
+  mapGateTriggerType(rule) {
+    if (rule === 1 || rule === '>=') return 3;
+    if (rule === 2 || rule === '<=') return 3;
+    return 3;
+  }
+
+  mapGateTrend(rule) {
+    if (rule === 1 || rule === '>=') return 1;
+    if (rule === 2 || rule === '<=') return 2;
+    return 1;
   }
 
   send(message) {

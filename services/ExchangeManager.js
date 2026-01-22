@@ -13,8 +13,8 @@ class ExchangeManager {
 
     this.client = null;
     this.ws = null;
-    this.telegram = telegramInstance; // Use shared telegram instance
-    this.positionTracker = positionTracker; // Reference to PositionTracker
+    this.telegram = telegramInstance;
+    this.positionTracker = positionTracker;
     this.positions = new Map();
     this.contractCache = new Map();
 
@@ -29,12 +29,9 @@ class ExchangeManager {
       this.client = new GateClient(config.exchange_api_key, config.exchange_secret);
       this.ws = new GateWebSocket(config.exchange_api_key, config.exchange_secret);
     }
-    // Telegram instance is now passed via constructor, no need to create it here
   }
 
   async start() {
-    console.log(`🚀 Starting ${this.exchangeType} client for exchange ${this.exchangeId}...`);
-
     if (this.ws) {
       this.ws.connect();
 
@@ -46,33 +43,33 @@ class ExchangeManager {
         this.handlePositionUpdate(data);
       });
 
+      this.ws.on('orderUpdate', (data) => {
+        this.handleOrderUpdate(data);
+      });
+
       this.ws.on('priceUpdate', (data) => {
         this.handlePriceUpdate(data);
+      });
+
+      this.ws.on('planOrderUpdate', (data) => {
+        this.handlePlanOrderUpdate(data);
       });
     }
   }
 
   async loadInitialPositions() {
-    console.log(`📊 Loading initial positions for exchange ${this.exchangeId}...`);
-
     const positions = await this.client.fetchOpenPositions();
     for (const position of positions) {
       const contractInfo = await this.getContractInfo(position.symbol);
 
-      // Use fairPrice from API, or fallback to position's fair price, or entry price
       let currentPrice = contractInfo.fairPrice;
       if (!currentPrice || currentPrice === 0) {
         currentPrice = parseFloat(position.fairPrice || position.holdAvgPrice || 0);
-        console.log(`⚠️  Using fallback price for ${position.symbol}: ${currentPrice}`);
       }
-
-      // Debug logging for contract info
-      console.log(`Position: ${position.symbol}, ContractSize: ${contractInfo.contractSize}, Price: ${currentPrice}`);
 
       const unrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
         { ...position, contractSize: contractInfo.contractSize },
-        currentPrice,
-        this.exchangeType
+        currentPrice
       );
 
       const key = `${position.symbol}_${position.positionId}`;
@@ -86,17 +83,13 @@ class ExchangeManager {
         positionValue: PnLCalculator.calculatePositionValue(
           position.holdVol,
           contractInfo.contractSize,
-          currentPrice,
-          this.exchangeType
+          currentPrice
         )
       });
       this.ws.subscribeToPrice(position.symbol);
     }
 
-    // Notify position tracker about all positions
     this.notifyPositionTracker();
-
-    console.log(`✅ Loaded ${positions.length} position(s) for exchange ${this.exchangeId}`);
   }
 
   async getContractInfo(symbol) {
@@ -114,7 +107,6 @@ class ExchangeManager {
     const holdVol = parseFloat(data.holdVol);
 
     if ((!prevPosition || prevPosition.state === 3) && state === 1 && holdVol > 0) {
-      console.log(`🟢 Position opened: ${data.symbol} (Exchange: ${this.exchangeId})`);
       if (this.telegram) {
         this.telegram.sendNotification('opened', {
           ...data,
@@ -126,7 +118,6 @@ class ExchangeManager {
     }
 
     if (prevPosition && prevPosition.state === 1 && state === 3) {
-      console.log(`🔴 Position closed: ${data.symbol} (Exchange: ${this.exchangeId})`);
       if (this.telegram) {
         this.telegram.sendNotification('closed', {
           ...prevPosition,
@@ -141,12 +132,16 @@ class ExchangeManager {
     }
 
     if (prevPosition && prevPosition.state === 1 && state === 1 && prevPosition.holdVol !== holdVol) {
-      console.log(`🔄 Position modified: ${data.symbol} (Exchange: ${this.exchangeId})`);
+      const isIncrease = holdVol > prevPosition.holdVol;
+      const notificationType = isIncrease ? 'positionIncreased' : 'positionDecreased';
+
       if (this.telegram) {
-        this.telegram.sendNotification('modified', {
+        this.telegram.sendNotification(notificationType, {
           ...data,
           exchangeId: this.exchangeId,
-          exchangeName: this.exchangeName
+          exchangeName: this.exchangeName,
+          contractSize: prevPosition.contractSize,
+          previousHoldVol: prevPosition.holdVol
         });
       }
     }
@@ -165,6 +160,61 @@ class ExchangeManager {
     }
   }
 
+  async handleOrderUpdate(data) {
+    const orderState = data.state;
+    const category = data.category;
+    const dealVol = parseFloat(data.dealVol) || 0;
+
+    if (category === 1) {
+      const contractInfo = await this.getContractInfo(data.symbol);
+      const orderData = {
+        ...data,
+        exchangeId: this.exchangeId,
+        exchangeName: this.exchangeName,
+        contractSize: contractInfo.contractSize
+      };
+
+      if (orderState === 2 && dealVol === 0) {
+        if (this.telegram) {
+          this.telegram.sendNotification('limitOrderPlaced', orderData);
+        }
+      } else if (orderState === 3) {
+        if (this.telegram) {
+          this.telegram.sendNotification('limitOrderFilled', orderData);
+        }
+      } else if (orderState === 4) {
+        if (this.telegram) {
+          this.telegram.sendNotification('limitOrderCancelled', orderData);
+        }
+      }
+    }
+  }
+
+  async handlePlanOrderUpdate(data) {
+    const state = data.state;
+    const contractInfo = await this.getContractInfo(data.symbol);
+    const orderData = {
+      ...data,
+      exchangeId: this.exchangeId,
+      exchangeName: this.exchangeName,
+      contractSize: contractInfo.contractSize
+    };
+
+    if (state === 1) {
+      if (this.telegram) {
+        this.telegram.sendNotification('planOrderPlaced', orderData);
+      }
+    } else if (state === 2) {
+      if (this.telegram) {
+        this.telegram.sendNotification('planOrderTriggered', orderData);
+      }
+    } else if (state === 3) {
+      if (this.telegram) {
+        this.telegram.sendNotification('planOrderCancelled', orderData);
+      }
+    }
+  }
+
   handlePriceUpdate(data) {
     const { symbol, price } = data;
     let updated = false;
@@ -173,12 +223,10 @@ class ExchangeManager {
       if (key.startsWith(symbol + '_')) {
         const newUnrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
           position,
-          price,
-          this.exchangeType
+          price
         );
         const oldUnrealizedPnl = position.unrealizedPnl || 0;
 
-        // For very small PnL changes (like BTC with small contract sizes), lower the threshold
         const threshold = Math.abs(oldUnrealizedPnl) < 1 ? 0.01 : 0.1;
 
         if (Math.abs(newUnrealizedPnl - oldUnrealizedPnl) > threshold) {
@@ -187,8 +235,7 @@ class ExchangeManager {
           position.positionValue = PnLCalculator.calculatePositionValue(
             position.holdVol,
             position.contractSize,
-            price,
-            this.exchangeType
+            price
           );
           updated = true;
         }
@@ -200,7 +247,6 @@ class ExchangeManager {
     }
   }
 
-  // Notify the position tracker about position changes
   notifyPositionTracker() {
     if (this.positionTracker) {
       this.positionTracker.updatePositions(this.exchangeId, this.positions);
@@ -208,7 +254,6 @@ class ExchangeManager {
   }
 
   stop() {
-    console.log(`🛑 Stopping exchange ${this.exchangeId}...`);
     if (this.ws) {
       this.ws.disconnect();
     }

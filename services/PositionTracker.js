@@ -9,17 +9,16 @@ class PositionTracker {
     this.apiWs = new ApiWebSocket();
     this.exchangeManagers = new Map();
     this.telegram = null;
-    this.allPositions = new Map(); // Aggregated positions from all exchanges
-    this.telegramUpdateTimeout = null; // Debounce timer for telegram updates
+    this.allPositions = new Map();
+    this.telegramUpdateInterval = null;
+    this.positionsChanged = false;
   }
 
   async start() {
-    console.log('🚀 Starting Multi-Exchange Position Tracker...\n');
-
     const userData = await this.apiClient.fetchUsersWithExchanges();
 
     if (!userData) {
-      console.error('❌ Failed to fetch user data from API');
+      console.error('Failed to fetch user data from API');
       return;
     }
 
@@ -33,24 +32,20 @@ class PositionTracker {
   }
 
   async initializeExchanges(userData) {
-    console.log(`👤 Initializing exchanges for user: ${userData.username}\n`);
-
     if (!userData.exchanges || userData.exchanges.length === 0) {
-      console.log('⚠️  No exchanges found for this user');
       return;
     }
 
-    // Create single Telegram bot instance if credentials are provided
     if (userData.telegram_bot_key && userData.telegram_chat_id && !this.telegram) {
-      console.log('📱 Creating shared Telegram bot instance');
       this.telegram = new TelegramBotService(
         {
           botToken: userData.telegram_bot_key,
           chatId: userData.telegram_chat_id
         },
-        () => this.allPositions // Callback to get current positions
+        () => this.allPositions
       );
       this.telegram.setupCommands();
+      this.startTelegramUpdateInterval();
     }
 
     for (const exchange of userData.exchanges) {
@@ -62,13 +57,9 @@ class PositionTracker {
     const exchangeId = exchangeConfig.id;
 
     if (this.exchangeManagers.has(exchangeId)) {
-      console.log(`⚠️  Exchange ${exchangeId} already exists`);
       return;
     }
 
-    console.log(`➕ Adding ${exchangeConfig.exchange} exchange: ${exchangeConfig.name}`);
-
-    // Pass the shared telegram instance and position tracker to the manager
     const manager = new ExchangeManager(exchangeConfig, this.telegram, this);
     this.exchangeManagers.set(exchangeId, manager);
 
@@ -76,36 +67,28 @@ class PositionTracker {
   }
 
   async handleExchangeCreated(eventData) {
-    console.log(`\n📢 New exchange created event received`);
-    console.log(`User ID: ${eventData.userId}`);
-    console.log(`Exchange: ${eventData.exchange.exchange} - ${eventData.exchange.name}\n`);
-
-    // Create telegram instance if not exists and credentials are provided
     if (eventData.telegram_bot_key && eventData.telegram_chat_id && !this.telegram) {
-      console.log('📱 Creating shared Telegram bot instance');
       this.telegram = new TelegramBotService(
         {
           botToken: eventData.telegram_bot_key,
           chatId: eventData.telegram_chat_id
         },
-        () => this.allPositions // Callback to get current positions
+        () => this.allPositions
       );
       this.telegram.setupCommands();
+      this.startTelegramUpdateInterval();
     }
 
     await this.addExchange(eventData.exchange);
   }
 
-  // Called by ExchangeManager to update positions
   updatePositions(exchangeId, exchangePositions) {
-    // Remove old positions for this exchange
     for (const [key] of this.allPositions) {
       if (key.startsWith(`${exchangeId}_`)) {
         this.allPositions.delete(key);
       }
     }
 
-    // Add new positions for this exchange
     for (const [posKey, position] of exchangePositions) {
       const globalKey = `${exchangeId}_${posKey}`;
       this.allPositions.set(globalKey, {
@@ -114,23 +97,31 @@ class PositionTracker {
       });
     }
 
-    // Update telegram with all positions
-    this.updateTelegramMessage();
+    this.positionsChanged = true;
   }
 
-  async updateTelegramMessage() {
-    // Clear existing timeout to debounce rapid updates
-    if (this.telegramUpdateTimeout) {
-      clearTimeout(this.telegramUpdateTimeout);
+  startTelegramUpdateInterval() {
+    if (this.telegramUpdateInterval) {
+      return;
     }
 
-    // Set new timeout to batch updates within 500ms window
-    this.telegramUpdateTimeout = setTimeout(async () => {
-      if (this.telegram && this.allPositions.size > 0) {
+    if (this.telegram && this.allPositions.size > 0) {
+      this.telegram.sendOrUpdatePositions(this.allPositions);
+    }
+
+    this.telegramUpdateInterval = setInterval(async () => {
+      if (this.positionsChanged && this.telegram && this.allPositions.size > 0) {
         await this.telegram.sendOrUpdatePositions(this.allPositions);
+        this.positionsChanged = false;
       }
-      this.telegramUpdateTimeout = null;
-    }, 500);
+    }, 10000);
+  }
+
+  stopTelegramUpdateInterval() {
+    if (this.telegramUpdateInterval) {
+      clearInterval(this.telegramUpdateInterval);
+      this.telegramUpdateInterval = null;
+    }
   }
 
   removeExchange(exchangeId) {
@@ -139,20 +130,18 @@ class PositionTracker {
       manager.stop();
       this.exchangeManagers.delete(exchangeId);
 
-      // Remove positions for this exchange
       for (const [key] of this.allPositions) {
         if (key.startsWith(`${exchangeId}_`)) {
           this.allPositions.delete(key);
         }
       }
 
-      this.updateTelegramMessage();
-      console.log(`➖ Removed exchange: ${exchangeId}`);
+      this.positionsChanged = true;
     }
   }
 
   stop() {
-    console.log('\n🛑 Stopping all exchanges...');
+    this.stopTelegramUpdateInterval();
     this.exchangeManagers.forEach((manager) => {
       manager.stop();
     });

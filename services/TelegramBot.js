@@ -6,9 +6,9 @@ class TelegramBotService {
     this.bot = new TelegramBot(telegramConfig.botToken, { polling: true });
     this.chatId = telegramConfig.chatId;
     this.pinnedMessageId = null;
-    this.getPositions = getPositionsCallback; // Callback to get current positions
+    this.getPositions = getPositionsCallback;
   }
-  
+
   async sendOrUpdatePositions(positions) {
     const message = MessageFormatter.formatPositionMessage(positions);
 
@@ -30,7 +30,7 @@ class TelegramBotService {
       console.error('Telegram error:', error.message);
     }
   }
-  
+
   async sendNotification(type, position) {
     const message = MessageFormatter.formatPositionUpdate(type, position);
 
@@ -42,9 +42,9 @@ class TelegramBotService {
       console.error('Telegram notification error:', error.message);
     }
   }
-  
+
   setupCommands() {
-    this.bot.onText(/\/start/, (msg) => {
+    this.bot.onText(/\/start(@\w+)?/, (msg) => {
       this.bot.sendMessage(msg.chat.id,
           '👋 MEXC Position Tracker Bot\n\n' +
           'Your positions will be automatically tracked and displayed here.\n\n' +
@@ -55,17 +55,17 @@ class TelegramBotService {
       );
     });
 
-    this.bot.onText(/\/chatid/, (msg) => {
+    this.bot.onText(/\/chatid(@\w+)?/, (msg) => {
       this.bot.sendMessage(msg.chat.id, `Your Chat ID: ${msg.chat.id}`);
     });
 
-    this.bot.onText(/\/positions(.*)/, async (msg, match) => {
+    this.bot.onText(/\/positions(@\w+)?(.*)/, async (msg, match) => {
       if (!this.getPositions) {
         this.bot.sendMessage(msg.chat.id, '❌ Positions service not available');
         return;
       }
 
-      const symbolFilter = match[1] ? match[1].trim().toUpperCase() : null;
+      const symbolFilter = match[2] ? match[2].trim().toUpperCase() : null;
       const allPositions = this.getPositions();
 
       if (!allPositions || allPositions.size === 0) {
@@ -75,11 +75,10 @@ class TelegramBotService {
 
       let filteredPositions = allPositions;
 
-      // Filter by symbol if provided
       if (symbolFilter) {
         filteredPositions = new Map();
         for (const [key, position] of allPositions) {
-          if (position.symbol.toUpperCase() === symbolFilter) {
+          if (position.symbol.toUpperCase().includes(symbolFilter)) {
             filteredPositions.set(key, position);
           }
         }
