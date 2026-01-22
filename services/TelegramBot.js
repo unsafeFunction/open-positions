@@ -1,5 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const MessageFormatter = require('../utils/formatter');
+const config = require('../config');
 
 class TelegramBotService {
   constructor(telegramConfig, getPositionsCallback = null) {
@@ -7,6 +8,7 @@ class TelegramBotService {
     this.chatId = telegramConfig.chatId;
     this.pinnedMessageId = null;
     this.getPositions = getPositionsCallback;
+    this.webAppUrl = config.webapp?.url;
   }
 
   async sendOrUpdatePositions(positions) {
@@ -45,14 +47,39 @@ class TelegramBotService {
 
   setupCommands() {
     this.bot.onText(/\/start(@\w+)?/, (msg) => {
+      const commands = [
+        '/positions - Show all current positions',
+        '/positions SYMBOL - Show positions for specific symbol',
+        '/chatid - Get your chat ID'
+      ];
+
+      if (this.webAppUrl) {
+        commands.push('/app - Open Mini App');
+      }
+
       this.bot.sendMessage(msg.chat.id,
-          '👋 MEXC Position Tracker Bot\n\n' +
+          'MEXC Position Tracker Bot\n\n' +
           'Your positions will be automatically tracked and displayed here.\n\n' +
-          'Commands:\n' +
-          '/positions - Show all current positions\n' +
-          '/positions SYMBOL - Show positions for specific symbol (e.g., /positions BTC)\n' +
-          '/chatid - Get your chat ID'
+          'Commands:\n' + commands.join('\n')
       );
+    });
+
+    this.bot.onText(/\/app(@\w+)?/, (msg) => {
+      if (!this.webAppUrl) {
+        this.bot.sendMessage(msg.chat.id, 'Mini App URL not configured. Set WEBAPP_URL in .env');
+        return;
+      }
+
+      this.bot.sendMessage(msg.chat.id, 'Open the Positions Mini App:', {
+        reply_markup: {
+          inline_keyboard: [[
+            {
+              text: 'Open Positions',
+              web_app: { url: this.webAppUrl }
+            }
+          ]]
+        }
+      });
     });
 
     this.bot.onText(/\/chatid(@\w+)?/, (msg) => {

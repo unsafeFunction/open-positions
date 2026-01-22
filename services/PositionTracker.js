@@ -1,10 +1,13 @@
+const EventEmitter = require('events');
 const ApiClient = require('./ApiClient');
 const ApiWebSocket = require('./ApiWebSocket');
 const ExchangeManager = require('./ExchangeManager');
 const TelegramBotService = require('./TelegramBot');
+const PositionAggregator = require('../utils/positionAggregator');
 
-class PositionTracker {
+class PositionTracker extends EventEmitter {
   constructor() {
+    super();
     this.apiClient = new ApiClient();
     this.apiWs = new ApiWebSocket();
     this.exchangeManagers = new Map();
@@ -98,6 +101,32 @@ class PositionTracker {
     }
 
     this.positionsChanged = true;
+    this.emit('positionsUpdated', this.getPositionsForApi());
+  }
+
+  getPositionsForApi() {
+    const positions = Array.from(this.allPositions.values());
+    const summary = PositionAggregator.getSummary(this.allPositions);
+
+    return {
+      positions,
+      exchanges: summary.exchanges,
+      summary: {
+        totalValue: summary.totalValue,
+        totalUnrealizedPnl: summary.totalUnrealizedPnl,
+        totalRealizedPnl: summary.totalRealizedPnl,
+        positionCount: summary.positionCount
+      }
+    };
+  }
+
+  getPositionsByExchange(exchangeName) {
+    return Array.from(this.allPositions.values())
+      .filter(p => p.exchangeName === exchangeName);
+  }
+
+  getCombinedPositions() {
+    return PositionAggregator.aggregateBySymbol(this.allPositions);
   }
 
   startTelegramUpdateInterval() {
