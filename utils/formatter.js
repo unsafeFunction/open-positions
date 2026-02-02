@@ -1,6 +1,11 @@
 const PnLCalculator = require('./calculator');
 
 class MessageFormatter {
+  static EXCHANGE_URLS = {
+    'MEXC': (symbol) => `https://futures.mexc.com/exchange/${symbol}`,
+    'GATE': (symbol) => `https://www.gate.io/futures_trade/USDT/${symbol}`
+  };
+
   static calculateDollarValue(vol, contractSize, price) {
     const v = parseFloat(vol) || 0;
     const cs = parseFloat(contractSize) || 1;
@@ -9,12 +14,17 @@ class MessageFormatter {
   }
 
   static formatDollarValue(value) {
-    return `$${parseFloat(value.toFixed(2))}`;
+    return `${parseFloat(value.toFixed(2))}$`;
+  }
+
+  static getExchangeUrl(exchangeType, symbol) {
+    const urlGenerator = this.EXCHANGE_URLS[exchangeType];
+    return urlGenerator ? urlGenerator(symbol) : null;
   }
 
   static formatPositionMessage(positionsMap) {
     if (!positionsMap || positionsMap.size === 0) {
-      return '✅ No open positions';
+      return 'Нет открытых позиций';
     }
 
     const groupedBySymbol = new Map();
@@ -29,8 +39,8 @@ class MessageFormatter {
 
     const sortedSymbols = Array.from(groupedBySymbol.keys()).sort();
 
-    let message = '<b>📊 OPEN POSITIONS</b>\n';
-    message += '═══════════════════════════\n\n';
+    let message = '<b>ОТКРЫТЫЕ ПОЗИЦИИ</b>\n';
+    message += '------------------------\n\n';
 
     for (const symbol of sortedSymbols) {
       const positions = groupedBySymbol.get(symbol);
@@ -40,16 +50,16 @@ class MessageFormatter {
         const nameB = b.exchangeName || `Exchange ${b.exchangeId}`;
         return nameA.localeCompare(nameB);
       });
-      message += `<b>💎 ${symbol}</b>\n`;
-      message += '━━━━━━━━━━━━━━━━━━━━━━\n';
+      message += `<code>${symbol}</code>\n`;
+      message += '------------------------\n';
 
       let totalValue = 0;
       let totalUnrealizedPnL = 0;
       let totalRealizedPnL = 0;
 
       positions.forEach((pos, idx) => {
-        const side = pos.positionType === 1 ? '🟢 LONG' : '🔴 SHORT';
-        const mode = pos.openType === 1 ? 'Isolated' : 'Cross';
+        const side = pos.positionType === 1 ? 'Лонг' : 'Шорт';
+        const mode = pos.openType === 1 ? 'Изол' : 'Кросс';
         const exchangeName = pos.exchangeName || `Exchange ${pos.exchangeId}`;
 
         const unrealizedPnl = pos.unrealizedPnl || 0;
@@ -60,48 +70,42 @@ class MessageFormatter {
         totalUnrealizedPnL += unrealizedPnl;
         totalRealizedPnL += realizedPnl;
 
-        const unrealizedPnlEmoji = unrealizedPnl >= 0 ? '💚' : '❤️';
-        const realizedPnlEmoji = realizedPnl >= 0 ? '💰' : '💸';
-
-        message += `  <b>${exchangeName}</b>\n`;
-
-        message += `  ${side} | ${mode} | ${pos.leverage}x\n`;
-        message += `  💰 Size: ${this.formatDollarValue(posValue)}\n`;
-        message += `  📈 Entry: ${PnLCalculator.formatPrice(pos.holdAvgPrice)}\n`;
-        message += `  📊 Current: ${PnLCalculator.formatPrice(pos.currentPrice)}\n`;
-        message += `  ${unrealizedPnlEmoji} Unrealized: ${PnLCalculator.formatPnL(unrealizedPnl)}\n`;
-        message += `  ${realizedPnlEmoji} Realized: ${PnLCalculator.formatPnL(realizedPnl)}\n`;
-        message += `  🔴 Liq: ${PnLCalculator.formatPrice(pos.liquidatePrice)}\n`;
+        message += `<b>${exchangeName}</b>\n`;
+        message += `${side} | ${mode} | ${pos.leverage}x\n`;
+        message += `Объем: ${this.formatDollarValue(posValue)}\n`;
+        message += `ТВХ: ${PnLCalculator.formatPrice(pos.holdAvgPrice)}\n`;
+        message += `Текущая: ${PnLCalculator.formatPrice(pos.currentPrice)}\n`;
+        message += `Нереализ: ${PnLCalculator.formatPnL(unrealizedPnl)}\n`;
+        message += `Реализ: ${PnLCalculator.formatPnL(realizedPnl)}\n`;
+        message += `Ликвид: ${PnLCalculator.formatPrice(pos.liquidatePrice)}\n`;
 
         if (idx < positions.length - 1) {
-          message += `  ─────────────────────\n`;
+          message += `---\n`;
         }
       });
 
       if (positions.length > 1) {
         const totalPnL = totalUnrealizedPnL + totalRealizedPnL;
-        const unrealizedEmoji = totalUnrealizedPnL >= 0 ? '💚' : '❤️';
-        const realizedEmoji = totalRealizedPnL >= 0 ? '💰' : '💸';
-        const totalEmoji = totalPnL >= 0 ? '💰' : '💸';
 
         message += '\n';
-        message += `  <b>📊 ${symbol} Summary:</b>\n`;
-        message += `  Total Size: ${this.formatDollarValue(totalValue)}\n`;
-        message += `  ${unrealizedEmoji} Unrealized: ${PnLCalculator.formatPnL(totalUnrealizedPnL)}\n`;
-        message += `  ${realizedEmoji} Realized: ${PnLCalculator.formatPnL(totalRealizedPnL)}\n`;
-        message += `  ${totalEmoji} Total PnL: ${PnLCalculator.formatPnL(totalPnL)}\n`;
+        message += `<b>${symbol} Итого:</b>\n`;
+        message += `Объем: ${this.formatDollarValue(totalValue)}\n`;
+        message += `Нереализ: ${PnLCalculator.formatPnL(totalUnrealizedPnL)}\n`;
+        message += `Реализ: ${PnLCalculator.formatPnL(totalRealizedPnL)}\n`;
+        message += `Всего PnL: ${PnLCalculator.formatPnL(totalPnL)}\n`;
       }
 
       message += '\n';
     }
 
-    message += `🕐 Updated: ${new Date().toLocaleTimeString()}\n`;
+    message += `Обновлено: ${new Date().toLocaleTimeString()}\n`;
 
     return message;
   }
 
   static formatPositionUpdate(type, position) {
-    const side = position.positionType === 1 ? 'LONG 🚀' : 'SHORT 📉';
+    const side = position.positionType === 1 ? 'Лонг' : 'Шорт';
+    const mode = position.openType === 1 ? 'Изол' : 'Кросс';
     const exchangeName = position.exchangeName || `Exchange ${position.exchangeId}`;
     const contractSize = position.contractSize || 1;
 
@@ -110,29 +114,26 @@ class MessageFormatter {
     switch(type) {
       case 'opened':
         const openValue = this.calculateDollarValue(position.holdVol, contractSize, position.holdAvgPrice);
-        message = `🟢 <b>POSITION OPENED - ${exchangeName}</b>\n\n`;
-        message += `<b>Symbol:</b> ${position.symbol}\n`;
-        message += `<b>Side:</b> ${side}\n`;
-        message += `<b>Size:</b> ${this.formatDollarValue(openValue)}\n`;
-        message += `<b>Entry:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
-        message += `<b>Leverage:</b> ${position.leverage}x\n`;
+        message = `<b>${exchangeName}</b>\n`;
+        message += `Открыта позиция — ${side} (${mode})\n\n`;
+        message += `<code>${position.symbol}</code>\n`;
+        message += `ТВХ: ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
+        message += `Объем: ${this.formatDollarValue(openValue)}\n`;
+        message += `Плечо: ${position.leverage}x`;
         break;
 
       case 'closed':
         const closedRealizedPnl = position.realised || 0;
-        const closedPnlEmoji = closedRealizedPnl >= 0 ? '💚' : '❤️';
         const closedValue = this.calculateDollarValue(position.holdVol, contractSize, position.holdAvgPrice);
         const pnlPercentage = closedValue > 0
           ? ((closedRealizedPnl / closedValue) * 100).toFixed(2)
           : '0.00';
 
-        message = `🔴 <b>POSITION CLOSED - ${exchangeName}</b>\n\n`;
-        message += `<b>Symbol:</b> ${position.symbol}\n`;
-        message += `<b>Side:</b> ${side}\n`;
-        message += `<b>Size:</b> ${this.formatDollarValue(closedValue)}\n`;
-        message += `<b>Entry:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
-        message += `<b>Close Price:</b> ${PnLCalculator.formatPrice(position.currentPrice)}\n`;
-        message += `${closedPnlEmoji} <b>Realized PnL:</b> ${PnLCalculator.formatPnL(closedRealizedPnl)} (${pnlPercentage}%)\n`;
+        message = `<b>${exchangeName}</b>\n`;
+        message += `Закрыта позиция — ${side} (${mode})\n\n`;
+        message += `<code>${position.symbol}</code>\n`;
+        message += `Цена закрытия: ${PnLCalculator.formatPrice(position.currentPrice)}\n`;
+        message += `PNL: ${PnLCalculator.formatPnL(closedRealizedPnl)} (${pnlPercentage}%)`;
         break;
 
       case 'positionIncreased':
@@ -140,12 +141,12 @@ class MessageFormatter {
         const addedValue = this.calculateDollarValue(addedContracts, contractSize, position.holdAvgPrice);
         const newTotalValue = this.calculateDollarValue(position.holdVol, contractSize, position.holdAvgPrice);
 
-        message = `📈 <b>POSITION INCREASED - ${exchangeName}</b>\n\n`;
-        message += `<b>Symbol:</b> ${position.symbol}\n`;
-        message += `<b>Side:</b> ${side}\n`;
-        message += `<b>Added:</b> ${this.formatDollarValue(addedValue)}\n`;
-        message += `<b>New Size:</b> ${this.formatDollarValue(newTotalValue)}\n`;
-        message += `<b>Avg Entry:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
+        message = `<b>${exchangeName}</b>\n`;
+        message += `Позиция увеличена — ${side} (${mode})\n\n`;
+        message += `<code>${position.symbol}</code>\n`;
+        message += `Добавлено: ${this.formatDollarValue(addedValue)}\n`;
+        message += `Новый объем: ${this.formatDollarValue(newTotalValue)}\n`;
+        message += `Средняя ТВХ: ${PnLCalculator.formatPrice(position.holdAvgPrice)}`;
         break;
 
       case 'positionDecreased':
@@ -153,41 +154,40 @@ class MessageFormatter {
         const removedValue = this.calculateDollarValue(removedContracts, contractSize, position.holdAvgPrice);
         const remainingValue = this.calculateDollarValue(position.holdVol, contractSize, position.holdAvgPrice);
         const partialRealizedPnl = position.realised || 0;
-        const partialPnlEmoji = partialRealizedPnl >= 0 ? '💚' : '❤️';
 
-        message = `📉 <b>POSITION DECREASED - ${exchangeName}</b>\n\n`;
-        message += `<b>Symbol:</b> ${position.symbol}\n`;
-        message += `<b>Side:</b> ${side}\n`;
-        message += `<b>Removed:</b> ${this.formatDollarValue(removedValue)}\n`;
-        message += `<b>Remaining:</b> ${this.formatDollarValue(remainingValue)}\n`;
-        message += `<b>Avg Entry:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
+        message = `<b>${exchangeName}</b>\n`;
+        message += `Позиция уменьшена — ${side} (${mode})\n\n`;
+        message += `<code>${position.symbol}</code>\n`;
+        message += `Убрано: ${this.formatDollarValue(removedValue)}\n`;
+        message += `Осталось: ${this.formatDollarValue(remainingValue)}\n`;
+        message += `Средняя ТВХ: ${PnLCalculator.formatPrice(position.holdAvgPrice)}`;
         if (partialRealizedPnl !== 0) {
-          message += `${partialPnlEmoji} <b>Realized PnL:</b> ${PnLCalculator.formatPnL(partialRealizedPnl)}\n`;
+          message += `\nРеализованный PnL: ${PnLCalculator.formatPnL(partialRealizedPnl)}`;
         }
         break;
 
       case 'limitOrderPlaced':
-        message = this.formatLimitOrder('PLACED', position);
+        message = this.formatLimitOrder('Размещен', position);
         break;
 
       case 'limitOrderFilled':
-        message = this.formatLimitOrder('FILLED', position);
+        message = this.formatLimitOrder('Исполнен', position);
         break;
 
       case 'limitOrderCancelled':
-        message = this.formatLimitOrder('CANCELLED', position);
+        message = this.formatLimitOrder('Отменен', position);
         break;
 
       case 'planOrderPlaced':
-        message = this.formatPlanOrder('PLACED', position);
+        message = this.formatPlanOrder('Размещен', position);
         break;
 
       case 'planOrderTriggered':
-        message = this.formatPlanOrder('TRIGGERED', position);
+        message = this.formatPlanOrder('Сработал', position);
         break;
 
       case 'planOrderCancelled':
-        message = this.formatPlanOrder('CANCELLED', position);
+        message = this.formatPlanOrder('Отменен', position);
         break;
     }
 
@@ -200,32 +200,20 @@ class MessageFormatter {
     const orderValue = this.calculateDollarValue(order.vol, contractSize, order.price);
 
     let sideText = '';
-    if (order.side === 1) sideText = 'OPEN LONG 🟢';
-    else if (order.side === 2) sideText = 'CLOSE SHORT 🟢';
-    else if (order.side === 3) sideText = 'OPEN SHORT 🔴';
-    else if (order.side === 4) sideText = 'CLOSE LONG 🔴';
+    if (order.side === 1) sideText = 'Открыть лонг';
+    else if (order.side === 2) sideText = 'Закрыть шорт';
+    else if (order.side === 3) sideText = 'Открыть шорт';
+    else if (order.side === 4) sideText = 'Закрыть лонг';
 
-    let emoji = '';
-    let title = '';
-    if (status === 'PLACED') {
-      emoji = '📝';
-      title = 'LIMIT ORDER PLACED';
-    } else if (status === 'FILLED') {
-      emoji = '✅';
-      title = 'LIMIT ORDER FILLED';
-    } else if (status === 'CANCELLED') {
-      emoji = '❌';
-      title = 'LIMIT ORDER CANCELLED';
-    }
-
-    let message = `${emoji} <b>${title} - ${exchangeName}</b>\n\n`;
-    message += `<b>Symbol:</b> ${order.symbol}\n`;
-    message += `<b>Side:</b> ${sideText}\n`;
-    message += `<b>Size:</b> ${this.formatDollarValue(orderValue)}\n`;
-    message += `<b>Price:</b> ${PnLCalculator.formatPrice(order.price)}\n`;
+    let message = `<b>${exchangeName}</b>\n`;
+    message += `Лимитный ордер — ${sideText}\n\n`;
+    message += `<code>${order.symbol}</code>\n`;
+    message += `Цена: ${PnLCalculator.formatPrice(order.price)}\n`;
+    message += `Объем: ${this.formatDollarValue(orderValue)}\n`;
+    message += `Статус: ${status}`;
 
     if (order.leverage) {
-      message += `<b>Leverage:</b> ${order.leverage}x\n`;
+      message += `\nПлечо: ${order.leverage}x`;
     }
 
     return message;
@@ -237,48 +225,36 @@ class MessageFormatter {
     const orderValue = this.calculateDollarValue(order.vol, contractSize, order.price);
 
     let sideText = '';
-    if (order.side === 1) sideText = 'OPEN LONG 🟢';
-    else if (order.side === 2) sideText = 'CLOSE SHORT 🟢';
-    else if (order.side === 3) sideText = 'OPEN SHORT 🔴';
-    else if (order.side === 4) sideText = 'CLOSE LONG 🔴';
+    if (order.side === 1) sideText = 'Открыть лонг';
+    else if (order.side === 2) sideText = 'Закрыть шорт';
+    else if (order.side === 3) sideText = 'Открыть шорт';
+    else if (order.side === 4) sideText = 'Закрыть лонг';
 
     let triggerTypeText = '';
     if (order.triggerType === 1) triggerTypeText = 'Fair Price';
     else if (order.triggerType === 2) triggerTypeText = 'Index Price';
     else if (order.triggerType === 3) triggerTypeText = 'Last Price';
 
-    let trendText = order.trend === 1 ? '📈 rises to' : '📉 falls to';
+    let trendText = order.trend === 1 ? 'вырастет до' : 'упадет до';
 
-    let emoji = '';
-    let title = '';
-    if (status === 'PLACED') {
-      emoji = '🎯';
-      title = 'TRIGGER ORDER PLACED';
-    } else if (status === 'TRIGGERED') {
-      emoji = '✅';
-      title = 'TRIGGER ORDER EXECUTED';
-    } else if (status === 'CANCELLED') {
-      emoji = '❌';
-      title = 'TRIGGER ORDER CANCELLED';
-    }
-
-    let message = `${emoji} <b>${title} - ${exchangeName}</b>\n\n`;
-    message += `<b>Symbol:</b> ${order.symbol}\n`;
-    message += `<b>Side:</b> ${sideText}\n`;
-    message += `<b>Size:</b> ${this.formatDollarValue(orderValue)}\n`;
-    message += `<b>Trigger:</b> ${trendText} ${PnLCalculator.formatPrice(order.triggerPrice)} (${triggerTypeText})\n`;
-    message += `<b>Order Price:</b> ${PnLCalculator.formatPrice(order.price)}\n`;
+    let message = `<b>${exchangeName}</b>\n`;
+    message += `Триггер ордер — ${sideText}\n\n`;
+    message += `<code>${order.symbol}</code>\n`;
+    message += `Триггер: ${trendText} ${PnLCalculator.formatPrice(order.triggerPrice)} (${triggerTypeText})\n`;
+    message += `Цена ордера: ${PnLCalculator.formatPrice(order.price)}\n`;
+    message += `Объем: ${this.formatDollarValue(orderValue)}\n`;
+    message += `Статус: ${status}`;
 
     if (order.leverage) {
-      message += `<b>Leverage:</b> ${order.leverage}x\n`;
+      message += `\nПлечо: ${order.leverage}x`;
     }
 
     if (order.stopLossPrice && order.stopLossPrice > 0) {
-      message += `<b>Stop Loss:</b> ${PnLCalculator.formatPrice(order.stopLossPrice)}\n`;
+      message += `\nStop Loss: ${PnLCalculator.formatPrice(order.stopLossPrice)}`;
     }
 
     if (order.takeProfitPrice && order.takeProfitPrice > 0) {
-      message += `<b>Take Profit:</b> ${PnLCalculator.formatPrice(order.takeProfitPrice)}\n`;
+      message += `\nTake Profit: ${PnLCalculator.formatPrice(order.takeProfitPrice)}`;
     }
 
     return message;

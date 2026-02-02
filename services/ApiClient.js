@@ -1,4 +1,4 @@
-const config = require('../config');
+const config = require("../config");
 
 class ApiClient {
   constructor(baseUrl = null, apiSecret = null) {
@@ -10,8 +10,8 @@ class ApiClient {
     try {
       const response = await fetch(`${this.baseUrl}/exchanges`, {
         headers: {
-          'x-api-secret': this.apiSecret
-        }
+          "x-api-secret": this.apiSecret,
+        },
       });
 
       if (!response.ok) {
@@ -22,7 +22,7 @@ class ApiClient {
 
       return data;
     } catch (error) {
-      console.error('Error fetching users with exchanges:', error.message);
+      console.error("Error fetching users with exchanges:", error.message);
       return null;
     }
   }

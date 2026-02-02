@@ -9,6 +9,15 @@ class TelegramBotService {
     this.pinnedMessageId = null;
     this.getPositions = getPositionsCallback;
     this.webAppUrl = config.webapp?.url;
+    this.messageTracker = new Map();
+  }
+
+  getPositionKey(position) {
+    return `pos_${position.symbol}_${position.positionId}`;
+  }
+
+  getOrderKey(order) {
+    return `order_${order.symbol}_${order.orderId}`;
   }
 
   async sendOrUpdatePositions(positions) {
@@ -35,11 +44,59 @@ class TelegramBotService {
 
   async sendNotification(type, position) {
     const message = MessageFormatter.formatPositionUpdate(type, position);
+    const exchangeUrl = MessageFormatter.getExchangeUrl(position.exchangeType, position.symbol);
+
+    const options = {
+      parse_mode: 'HTML'
+    };
+
+    const typesWithButton = ['opened', 'limitOrderPlaced', 'planOrderPlaced'];
+    if (typesWithButton.includes(type) && exchangeUrl) {
+      options.reply_markup = {
+        inline_keyboard: [[
+          { text: position.symbol, url: exchangeUrl }
+        ]]
+      };
+    }
+
+    const replyTypes = {
+      'closed': 'pos',
+      'positionIncreased': 'pos',
+      'positionDecreased': 'pos',
+      'limitOrderFilled': 'order',
+      'limitOrderCancelled': 'order',
+      'planOrderTriggered': 'order',
+      'planOrderCancelled': 'order'
+    };
+
+    if (replyTypes[type]) {
+      const key = replyTypes[type] === 'pos'
+        ? this.getPositionKey(position)
+        : this.getOrderKey(position);
+      const originalMessageId = this.messageTracker.get(key);
+      if (originalMessageId) {
+        options.reply_to_message_id = originalMessageId;
+      }
+    }
 
     try {
-      await this.bot.sendMessage(this.chatId, message, {
-        parse_mode: 'HTML'
-      });
+      const sentMessage = await this.bot.sendMessage(this.chatId, message, options);
+
+      if (type === 'opened') {
+        const key = this.getPositionKey(position);
+        this.messageTracker.set(key, sentMessage.message_id);
+      } else if (type === 'limitOrderPlaced' || type === 'planOrderPlaced') {
+        const key = this.getOrderKey(position);
+        this.messageTracker.set(key, sentMessage.message_id);
+      }
+
+      if (type === 'closed') {
+        const key = this.getPositionKey(position);
+        this.messageTracker.delete(key);
+      } else if (['limitOrderFilled', 'limitOrderCancelled', 'planOrderTriggered', 'planOrderCancelled'].includes(type)) {
+        const key = this.getOrderKey(position);
+        this.messageTracker.delete(key);
+      }
     } catch (error) {
       console.error('Telegram notification error:', error.message);
     }
@@ -88,7 +145,7 @@ class TelegramBotService {
 
     this.bot.onText(/\/positions(@\w+)?(.*)/, async (msg, match) => {
       if (!this.getPositions) {
-        this.bot.sendMessage(msg.chat.id, '❌ Positions service not available');
+        this.bot.sendMessage(msg.chat.id, 'Сервис позиций недоступен');
         return;
       }
 
@@ -96,7 +153,7 @@ class TelegramBotService {
       const allPositions = this.getPositions();
 
       if (!allPositions || allPositions.size === 0) {
-        this.bot.sendMessage(msg.chat.id, '✅ No open positions', { parse_mode: 'HTML' });
+        this.bot.sendMessage(msg.chat.id, 'Нет открытых позиций', { parse_mode: 'HTML' });
         return;
       }
 
@@ -111,7 +168,7 @@ class TelegramBotService {
         }
 
         if (filteredPositions.size === 0) {
-          this.bot.sendMessage(msg.chat.id, `❌ No positions found for symbol: ${symbolFilter}`, { parse_mode: 'HTML' });
+          this.bot.sendMessage(msg.chat.id, `Позиции не найдены: ${symbolFilter}`, { parse_mode: 'HTML' });
           return;
         }
       }
@@ -122,7 +179,7 @@ class TelegramBotService {
         await this.bot.sendMessage(msg.chat.id, message, { parse_mode: 'HTML' });
       } catch (error) {
         console.error('Error sending positions:', error.message);
-        this.bot.sendMessage(msg.chat.id, '❌ Error retrieving positions');
+        this.bot.sendMessage(msg.chat.id, 'Ошибка получения позиций');
       }
     });
   }

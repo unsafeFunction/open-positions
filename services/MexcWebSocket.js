@@ -88,13 +88,13 @@ class MexcWebSocket extends EventEmitter {
         this.emit('positionUpdate', message.data);
       }
 
-      if (message.channel === 'push.personal.order') {
+      if (message.channel === 'push.personal.order') { -- 
         this.emit('orderUpdate', message.data);
       }
 
-      if (message.channel === 'push.personal.plan.order') {
-        this.emit('planOrderUpdate', message.data);
-      }
+      // if (message.channel === 'push.personal.plan.order') {
+      //   this.emit('planOrderUpdate', message.data);
+      // }
 
       if (message.channel === 'push.personal.stop.order') {
         this.emit('stopOrderUpdate', message.data);

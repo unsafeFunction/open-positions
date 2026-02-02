@@ -47,25 +47,31 @@ class MexcClient {
   
   async fetchContractDetails(symbol) {
     try {
-      const response = await fetch(`${this.restUrl}/contract/detail?symbol=${symbol}`);
-      const result = await response.json();
+      const [contractResponse, tickerResponse] = await Promise.all([
+        fetch(`${this.restUrl}/contract/detail?symbol=${symbol}`),
+        fetch(`${this.restUrl}/contract/ticker?symbol=${symbol}`)
+      ]);
 
-      if (result.success && result.data) {
-        // For MEXC, contractSize is the face value per contract
-        // fairPrice might not be in this endpoint, use indexPrice or lastPrice
-        const fairPrice = parseFloat(
-          result.data.fairPrice ||
-          result.data.indexPrice ||
-          result.data.lastPrice ||
+      const contractResult = await contractResponse.json();
+      const tickerResult = await tickerResponse.json();
+
+      let contractSize = 1;
+      let fairPrice = 0;
+
+      if (contractResult.success && contractResult.data) {
+        contractSize = parseFloat(contractResult.data.contractSize || 1);
+      }
+
+      if (tickerResult.success && tickerResult.data) {
+        fairPrice = parseFloat(
+          tickerResult.data.fairPrice ||
+          tickerResult.data.lastPrice ||
+          tickerResult.data.indexPrice ||
           0
         );
-
-        return {
-          contractSize: parseFloat(result.data.contractSize || 1),
-          fairPrice: fairPrice
-        };
       }
-      return { contractSize: 1, fairPrice: 0 };
+
+      return { contractSize, fairPrice };
     } catch (error) {
       console.error(`Error fetching MEXC contract details for ${symbol}:`, error.message);
       return { contractSize: 1, fairPrice: 0 };

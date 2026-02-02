@@ -100,21 +100,25 @@ class ExchangeManager {
     return this.contractCache.get(symbol);
   }
 
-  handlePositionUpdate(data) {
+  async handlePositionUpdate(data) {
     const key = `${data.symbol}_${data.positionId}`;
     const prevPosition = this.positions.get(key);
     const state = data.state;
     const holdVol = parseFloat(data.holdVol);
 
     if ((!prevPosition || prevPosition.state === 3) && state === 1 && holdVol > 0) {
+      this.ws.subscribeToPrice(data.symbol);
+
       if (this.telegram) {
+        const contractInfo = await this.getContractInfo(data.symbol);
         this.telegram.sendNotification('opened', {
           ...data,
           exchangeId: this.exchangeId,
-          exchangeName: this.exchangeName
+          exchangeName: this.exchangeName,
+          exchangeType: this.exchangeType,
+          contractSize: contractInfo.contractSize
         });
       }
-      this.ws.subscribeToPrice(data.symbol);
     }
 
     if (prevPosition && prevPosition.state === 1 && state === 3) {
@@ -123,7 +127,8 @@ class ExchangeManager {
           ...prevPosition,
           ...data,
           exchangeId: this.exchangeId,
-          exchangeName: this.exchangeName
+          exchangeName: this.exchangeName,
+          exchangeType: this.exchangeType
         });
       }
       this.positions.delete(key);
@@ -140,6 +145,7 @@ class ExchangeManager {
           ...data,
           exchangeId: this.exchangeId,
           exchangeName: this.exchangeName,
+          exchangeType: this.exchangeType,
           contractSize: prevPosition.contractSize,
           previousHoldVol: prevPosition.holdVol
         });
@@ -171,6 +177,7 @@ class ExchangeManager {
         ...data,
         exchangeId: this.exchangeId,
         exchangeName: this.exchangeName,
+        exchangeType: this.exchangeType,
         contractSize: contractInfo.contractSize
       };
 
@@ -197,6 +204,7 @@ class ExchangeManager {
       ...data,
       exchangeId: this.exchangeId,
       exchangeName: this.exchangeName,
+      exchangeType: this.exchangeType,
       contractSize: contractInfo.contractSize
     };
 
