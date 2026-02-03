@@ -3,7 +3,8 @@ const PnLCalculator = require('./calculator');
 class MessageFormatter {
   static EXCHANGE_URLS = {
     'MEXC': (symbol) => `https://futures.mexc.com/exchange/${symbol}`,
-    'GATE': (symbol) => `https://www.gate.io/futures_trade/USDT/${symbol}`
+    'GATE': (symbol) => `https://www.gate.io/futures_trade/USDT/${symbol}`,
+    'Bitget': (symbol) => `https://www.bitget.com/futures/usdt/${symbol}`
   };
 
   static calculateDollarValue(vol, contractSize, price) {
@@ -40,7 +41,6 @@ class MessageFormatter {
     const sortedSymbols = Array.from(groupedBySymbol.keys()).sort();
 
     let message = '<b>ОТКРЫТЫЕ ПОЗИЦИИ</b>\n';
-    message += '------------------------\n\n';
 
     for (const symbol of sortedSymbols) {
       const positions = groupedBySymbol.get(symbol);
@@ -115,11 +115,13 @@ class MessageFormatter {
       case 'opened':
         const openValue = this.calculateDollarValue(position.holdVol, contractSize, position.holdAvgPrice);
         message = `<b>${exchangeName}</b>\n`;
-        message += `Открыта позиция — ${side} (${mode})\n\n`;
+        message += `<b>Открыта позиция</b>\n`;
+        message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
-        message += `ТВХ: ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
-        message += `Объем: ${this.formatDollarValue(openValue)}\n`;
-        message += `Плечо: ${position.leverage}x`;
+        message += `━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `<b>ТВХ:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
+        message += `<b>Объем:</b> ${this.formatDollarValue(openValue)}\n`;
+        message += `<b>Плечо:</b> ${position.leverage}x`;
         break;
 
       case 'closed':
@@ -130,10 +132,12 @@ class MessageFormatter {
           : '0.00';
 
         message = `<b>${exchangeName}</b>\n`;
-        message += `Закрыта позиция — ${side} (${mode})\n\n`;
+        message += `<b>Закрыта позиция</b>\n`;
+        message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
-        message += `Цена закрытия: ${PnLCalculator.formatPrice(position.currentPrice)}\n`;
-        message += `PNL: ${PnLCalculator.formatPnL(closedRealizedPnl)} (${pnlPercentage}%)`;
+        message += `━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `<b>Цена:</b> ${PnLCalculator.formatPrice(position.currentPrice)}\n`;
+        message += `<b>PNL:</b> ${PnLCalculator.formatPnL(closedRealizedPnl)} (${pnlPercentage}%)`;
         break;
 
       case 'positionIncreased':
@@ -142,11 +146,13 @@ class MessageFormatter {
         const newTotalValue = this.calculateDollarValue(position.holdVol, contractSize, position.holdAvgPrice);
 
         message = `<b>${exchangeName}</b>\n`;
-        message += `Позиция увеличена — ${side} (${mode})\n\n`;
+        message += `<b>Позиция увеличена</b>\n`;
+        message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
-        message += `Добавлено: ${this.formatDollarValue(addedValue)}\n`;
-        message += `Новый объем: ${this.formatDollarValue(newTotalValue)}\n`;
-        message += `Средняя ТВХ: ${PnLCalculator.formatPrice(position.holdAvgPrice)}`;
+        message += `━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `<b>Добавлено:</b> ${this.formatDollarValue(addedValue)}\n`;
+        message += `<b>Новый объем:</b> ${this.formatDollarValue(newTotalValue)}\n`;
+        message += `<b>Средняя ТВХ:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}`;
         break;
 
       case 'positionDecreased':
@@ -156,13 +162,15 @@ class MessageFormatter {
         const partialRealizedPnl = position.realised || 0;
 
         message = `<b>${exchangeName}</b>\n`;
-        message += `Позиция уменьшена — ${side} (${mode})\n\n`;
+        message += `<b>Позиция уменьшена</b>\n`;
+        message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
-        message += `Убрано: ${this.formatDollarValue(removedValue)}\n`;
-        message += `Осталось: ${this.formatDollarValue(remainingValue)}\n`;
-        message += `Средняя ТВХ: ${PnLCalculator.formatPrice(position.holdAvgPrice)}`;
+        message += `━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `<b>Убрано:</b> ${this.formatDollarValue(removedValue)}\n`;
+        message += `<b>Осталось:</b> ${this.formatDollarValue(remainingValue)}\n`;
+        message += `<b>Средняя ТВХ:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}`;
         if (partialRealizedPnl !== 0) {
-          message += `\nРеализованный PnL: ${PnLCalculator.formatPnL(partialRealizedPnl)}`;
+          message += `\n<b>Реализованный PnL:</b> ${PnLCalculator.formatPnL(partialRealizedPnl)}`;
         }
         break;
 
@@ -205,7 +213,7 @@ class MessageFormatter {
   static formatLimitOrder(status, order) {
     const exchangeName = order.exchangeName || `Exchange ${order.exchangeId}`;
     const contractSize = order.contractSize || 1;
-    const orderValue = this.calculateDollarValue(order.vol, contractSize, order.price);
+    const orderValue = order.notionalUsd || this.calculateDollarValue(order.vol, contractSize, order.price);
 
     let sideText = '';
     if (order.side === 1) sideText = 'Открыть лонг';
@@ -214,14 +222,22 @@ class MessageFormatter {
     else if (order.side === 4) sideText = 'Закрыть лонг';
 
     let message = `<b>${exchangeName}</b>\n`;
-    message += `Лимитный ордер — ${sideText}\n\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `<b>Лимитный ордер — ${status}</b>\n`;
+    message += `${sideText}\n\n`;
     message += `<code>${order.symbol}</code>\n`;
-    message += `Цена: ${PnLCalculator.formatPrice(order.price)}\n`;
-    message += `Объем: ${this.formatDollarValue(orderValue)}\n`;
-    message += `Статус: ${status}`;
+    message += `━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `<b>Цена:</b> ${PnLCalculator.formatPrice(order.price)}\n`;
+    message += `<b>Объем:</b> ${this.formatDollarValue(orderValue)}`;
 
     if (order.leverage) {
-      message += `\nПлечо: ${order.leverage}x`;
+      message += `\n<b>Плечо:</b> ${order.leverage}x`;
+    }
+
+    // Показываем PNL при закрытии позиции (side 2 = закрыть шорт, side 4 = закрыть лонг)
+    const isClosing = order.side === 2 || order.side === 4;
+    if (isClosing && order.pnl !== undefined && order.pnl !== 0) {
+      message += `\n<b>PNL:</b> ${PnLCalculator.formatPnL(order.pnl)}`;
     }
 
     return message;
@@ -231,7 +247,7 @@ class MessageFormatter {
     const exchangeName = order.exchangeName || `Exchange ${order.exchangeId}`;
     const contractSize = order.contractSize || 1;
     const price = order.dealAvgPrice || order.price || 0;
-    const orderValue = this.calculateDollarValue(order.vol, contractSize, price);
+    const orderValue = order.notionalUsd || this.calculateDollarValue(order.vol, contractSize, price);
 
     let sideText = '';
     if (order.side === 1) sideText = 'Открыть лонг';
@@ -240,16 +256,24 @@ class MessageFormatter {
     else if (order.side === 4) sideText = 'Закрыть лонг';
 
     let message = `<b>${exchangeName}</b>\n`;
-    message += `Маркет ордер — ${sideText}\n\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `<b>Ордер — ${status}</b>\n`;
+    message += `${sideText}\n\n`;
     message += `<code>${order.symbol}</code>\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━\n`;
     if (price > 0) {
-      message += `Цена: ${PnLCalculator.formatPrice(price)}\n`;
+      message += `<b>Цена:</b> ${PnLCalculator.formatPrice(price)}\n`;
     }
-    message += `Объем: ${this.formatDollarValue(orderValue)}\n`;
-    message += `Статус: ${status}`;
+    message += `<b>Объем:</b> ${this.formatDollarValue(orderValue)}`;
 
     if (order.leverage) {
-      message += `\nПлечо: ${order.leverage}x`;
+      message += `\n<b>Плечо:</b> ${order.leverage}x`;
+    }
+
+    // Показываем PNL при закрытии позиции (side 2 = закрыть шорт, side 4 = закрыть лонг)
+    const isClosing = order.side === 2 || order.side === 4;
+    if (isClosing && order.pnl !== undefined && order.pnl !== 0) {
+      message += `\n<b>PNL:</b> ${PnLCalculator.formatPnL(order.pnl)}`;
     }
 
     return message;
@@ -264,15 +288,17 @@ class MessageFormatter {
     else if (triggerSide === 2) typeText = 'Стоп лосс';
 
     let message = `<b>${exchangeName}</b>\n`;
-    message += `${typeText} ${status}\n\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `<b>${typeText} — ${status}</b>\n\n`;
     message += `<code>${order.symbol}</code>\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━\n`;
 
     if (order.takeProfitPrice && parseFloat(order.takeProfitPrice) > 0) {
-      message += `Тейк профит: ${PnLCalculator.formatPrice(order.takeProfitPrice)}\n`;
+      message += `<b>TP:</b> ${PnLCalculator.formatPrice(order.takeProfitPrice)}\n`;
     }
 
     if (order.stopLossPrice && parseFloat(order.stopLossPrice) > 0) {
-      message += `Стоп лосс: ${PnLCalculator.formatPrice(order.stopLossPrice)}`;
+      message += `<b>SL:</b> ${PnLCalculator.formatPrice(order.stopLossPrice)}`;
     }
 
     return message;

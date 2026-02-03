@@ -23,6 +23,7 @@ class GateWebSocket extends EventEmitter {
     this.ws = new WebSocket(this.wsUrl);
 
     this.ws.on('open', () => {
+      console.log('Gate.io WebSocket connected');
       this.authenticate();
       this.startPing();
     });
@@ -130,16 +131,18 @@ class GateWebSocket extends EventEmitter {
       if (message.event === 'update' && message.channel === 'futures.orders') {
         if (message.result && Array.isArray(message.result)) {
           message.result.forEach(order => {
+            console.log('Gate order raw:', JSON.stringify(order, null, 2));
             const orderData = {
               symbol: order.contract,
               orderId: order.id,
               vol: Math.abs(parseFloat(order.size)),
               price: parseFloat(order.price),
-              side: this.mapGateSide(order.size, order.is_close),
+              side: this.mapGateSide(order.size, order.is_close || order.is_reduce_only),
               leverage: parseFloat(order.leverage || 0),
               state: this.mapGateOrderStatus(order.status, order.finish_as),
               dealVol: Math.abs(parseFloat(order.size)) - Math.abs(parseFloat(order.left || 0)),
-              category: 1
+              category: 1,
+              pnl: parseFloat(order.pnl || order.realised_pnl || 0)
             };
             this.emit('orderUpdate', orderData);
           });
@@ -189,10 +192,12 @@ class GateWebSocket extends EventEmitter {
 
   mapGateSide(size, isClose) {
     const isLong = parseFloat(size) > 0;
-    if (isClose) {
-      return isLong ? 2 : 4;
+    // Handle is_close as boolean, string, or number
+    const closing = isClose === true || isClose === 'true' || isClose === 1 || isClose === '1';
+    if (closing) {
+      return isLong ? 2 : 4;  // 2 = Close Short, 4 = Close Long
     }
-    return isLong ? 1 : 3;
+    return isLong ? 1 : 3;  // 1 = Open Long, 3 = Open Short
   }
 
   mapGateOrderStatus(status, finishAs) {

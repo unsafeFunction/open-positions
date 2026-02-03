@@ -2,6 +2,8 @@ const MexcClient = require('./MexcClient');
 const MexcWebSocket = require('./MexcWebSocket');
 const GateClient = require('./GateClient');
 const GateWebSocket = require('./GateWebSocket');
+const BitgetClient = require('./BitgetClient');
+const BitgetWebSocket = require('./BitgetWebSocket');
 const PnLCalculator = require('../utils/calculator');
 
 class ExchangeManager {
@@ -28,6 +30,10 @@ class ExchangeManager {
     } else if (this.exchangeType === 'GATE') {
       this.client = new GateClient(config.exchange_api_key, config.exchange_secret);
       this.ws = new GateWebSocket(config.exchange_api_key, config.exchange_secret);
+    } else if (this.exchangeType === 'Bitget') {
+      const passphrase = config.exchange_passphrase || 'mairin99';
+      this.client = new BitgetClient(config.exchange_api_key, config.exchange_secret, passphrase);
+      this.ws = new BitgetWebSocket(config.exchange_api_key, config.exchange_secret, passphrase);
     }
   }
 
@@ -58,38 +64,38 @@ class ExchangeManager {
   }
 
   async loadInitialPositions() {
-    const positions = await this.client.fetchOpenPositions();
-    for (const position of positions) {
-      const contractInfo = await this.getContractInfo(position.symbol);
+    // const positions = await this.client.fetchOpenPositions();
+    // for (const position of positions) {
+    //   const contractInfo = await this.getContractInfo(position.symbol);
 
-      let currentPrice = contractInfo.fairPrice;
-      if (!currentPrice || currentPrice === 0) {
-        currentPrice = parseFloat(position.fairPrice || position.holdAvgPrice || 0);
-      }
+    //   let currentPrice = contractInfo.fairPrice;
+    //   if (!currentPrice || currentPrice === 0) {
+    //     currentPrice = parseFloat(position.fairPrice || position.holdAvgPrice || 0);
+    //   }
 
-      const unrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
-        { ...position, contractSize: contractInfo.contractSize },
-        currentPrice
-      );
+    //   const unrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
+    //     { ...position, contractSize: contractInfo.contractSize },
+    //     currentPrice
+    //   );
 
-      const key = `${position.symbol}_${position.positionId}`;
-      this.positions.set(key, {
-        ...position,
-        exchangeId: this.exchangeId,
-        exchangeName: this.exchangeName,
-        contractSize: contractInfo.contractSize,
-        currentPrice: currentPrice,
-        unrealizedPnl: unrealizedPnl,
-        positionValue: PnLCalculator.calculatePositionValue(
-          position.holdVol,
-          contractInfo.contractSize,
-          currentPrice
-        )
-      });
-      this.ws.subscribeToPrice(position.symbol);
-    }
+    //   const key = `${position.symbol}_${position.positionId}`;
+    //   this.positions.set(key, {
+    //     ...position,
+    //     exchangeId: this.exchangeId,
+    //     exchangeName: this.exchangeName,
+    //     contractSize: contractInfo.contractSize,
+    //     currentPrice: currentPrice,
+    //     unrealizedPnl: unrealizedPnl,
+    //     positionValue: PnLCalculator.calculatePositionValue(
+    //       position.holdVol,
+    //       contractInfo.contractSize,
+    //       currentPrice
+    //     )
+    //   });
+    //   this.ws.subscribeToPrice(position.symbol);
+    // }
 
-    this.notifyPositionTracker();
+    // this.notifyPositionTracker();
   }
 
   async getContractInfo(symbol) {
@@ -109,7 +115,8 @@ class ExchangeManager {
     if ((!prevPosition || prevPosition.state === 3) && state === 1 && holdVol > 0) {
       this.ws.subscribeToPrice(data.symbol);
 
-      if (this.telegram) {
+      // Skip notification for initial snapshot (existing positions on startup)
+      if (this.telegram && !data.isSnapshot) {
         const contractInfo = await this.getContractInfo(data.symbol);
         this.telegram.sendNotification('opened', {
           ...data,
@@ -173,7 +180,8 @@ class ExchangeManager {
 
     // Skip market orders - position update will handle the notification
     const isMarketOrder = orderType === 5 || orderType === 6;
-    if (isMarketOrder) {
+
+    if (isMarketOrder && this.exchangeName.toLowerCase() !== 'bitget') {
       return;
     }
 
@@ -186,11 +194,28 @@ class ExchangeManager {
       contractSize: contractInfo.contractSize
     };
 
-    if (orderState === 2 && dealVol === 0) {
+    // const isMarketOrder = orderType === 5 || orderType === 6;
+
+    // For limit orders: notify when placed (state 2, no fills yet)
+    if (!isMarketOrder && orderState === 2 && dealVol === 0) {
       if (this.telegram) {
         this.telegram.sendNotification('limitOrderPlaced', orderData);
       }
-    } else if (orderState === 4) {
+    }
+    // For limit orders: notify when filled (state 3)
+    else if (!isMarketOrder && orderState === 3) {
+      if (this.telegram) {
+        this.telegram.sendNotification('limitOrderFilled', orderData);
+      }
+    }
+    // For market orders: notify when filled (state 3) - this is when we have the actual price
+    else if (isMarketOrder && orderState === 3) {
+      if (this.telegram) {
+        this.telegram.sendNotification('marketOrderFilled', orderData);
+      }
+    }
+    // For cancelled orders
+    else if (orderState === 4) {
       if (this.telegram) {
         this.telegram.sendNotification('limitOrderCancelled', orderData);
       }

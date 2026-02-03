@@ -25,6 +25,7 @@ class MexcWebSocket extends EventEmitter {
     this.ws = new WebSocket(this.wsUrl);
 
     this.ws.on('open', () => {
+      console.log('Mexc WebSocket connected');
       this.authenticate();
       this.startPing();
     });
@@ -89,7 +90,13 @@ class MexcWebSocket extends EventEmitter {
       }
 
       if (message.channel === 'push.personal.order') {
-        this.emit('orderUpdate', message.data);
+        console.log('MEXC order raw:', JSON.stringify(message.data, null, 2));
+        // Добавляем pnl если есть в данных
+        const orderData = {
+          ...message.data,
+          pnl: parseFloat(message.data.profit || message.data.pnl || message.data.realizedPnl || 0)
+        };
+        this.emit('orderUpdate', orderData);
       }
 
       if (message.channel === 'push.personal.stop.planorder') {

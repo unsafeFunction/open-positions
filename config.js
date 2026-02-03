@@ -12,6 +12,9 @@ module.exports = {
     wsUrl: 'wss://fx-ws.gateio.ws/v4/ws/usdt',
     restUrl: 'https://api.gateio.ws'
   },
+  bitget: {
+    restUrl: 'https://api.bitget.com'
+  },
   webapp: {
     port: parseInt(process.env.WEBAPP_PORT) || 3002,
     host: process.env.WEBAPP_HOST || '0.0.0.0',

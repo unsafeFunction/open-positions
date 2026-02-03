@@ -120,7 +120,6 @@ class WebServer {
     this.server.listen(this.port, this.host, () => {
       console.log(`API Server running on http://${this.host}:${this.port}`);
       console.log(`WebSocket available at ws://${this.host}:${this.port}/ws`);
-      console.log(`CORS origins: ${this.corsOrigins.join(', ')}`);
     });
   }
 

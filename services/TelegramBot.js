@@ -50,7 +50,8 @@ class TelegramBotService {
       parse_mode: 'HTML'
     };
 
-    const typesWithButton = ['opened', 'limitOrderPlaced', 'marketOrderPlaced'];
+    const typesWithButton = ['opened', 'limitOrderPlaced', 'marketOrderPlaced', 'marketOrderFilled'];
+
     if (typesWithButton.includes(type) && exchangeUrl) {
       options.reply_markup = {
         inline_keyboard: [[
