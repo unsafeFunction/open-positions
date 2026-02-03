@@ -200,7 +200,6 @@ class BitgetWebSocket extends EventEmitter {
     if (!Array.isArray(positions)) return;
 
     positions.forEach(pos => {
-      console.log('Bitget position raw:', JSON.stringify(pos, null, 2));
       const size = parseFloat(pos.total || pos.size || 0);
       const isLong = pos.holdSide === 'long';
       const isIsolated = pos.marginMode === 'isolated';
@@ -228,7 +227,6 @@ class BitgetWebSocket extends EventEmitter {
     if (!Array.isArray(orders)) return;
 
     orders.forEach(order => {
-      console.log('Bitget order raw:', JSON.stringify(order, null, 2));
       const size = parseFloat(order.size || order.sz || order.newSize || 0);
       const notionalUsd = parseFloat(order.notionalUsd || order.fillNotionalUsd || 0);
       const rawOrderType = order.orderType || order.ordType;

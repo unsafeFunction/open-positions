@@ -90,7 +90,6 @@ class MexcWebSocket extends EventEmitter {
       }
 
       if (message.channel === 'push.personal.order') {
-        console.log('MEXC order raw:', JSON.stringify(message.data, null, 2));
         // Добавляем pnl если есть в данных
         const orderData = {
           ...message.data,
@@ -100,7 +99,6 @@ class MexcWebSocket extends EventEmitter {
       }
 
       if (message.channel === 'push.personal.stop.planorder') {
-        console.log('Received stop order update:', message.data);
         this.emit('stopOrderUpdate', message.data);
       }
 

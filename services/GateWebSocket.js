@@ -131,7 +131,6 @@ class GateWebSocket extends EventEmitter {
       if (message.event === 'update' && message.channel === 'futures.orders') {
         if (message.result && Array.isArray(message.result)) {
           message.result.forEach(order => {
-            console.log('Gate order raw:', JSON.stringify(order, null, 2));
             const orderData = {
               symbol: order.contract,
               orderId: order.id,

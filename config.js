@@ -15,6 +15,9 @@ module.exports = {
   bitget: {
     restUrl: 'https://api.bitget.com'
   },
+  binance: {
+    restUrl: 'https://fapi.binance.com'
+  },
   webapp: {
     port: parseInt(process.env.WEBAPP_PORT) || 3002,
     host: process.env.WEBAPP_HOST || '0.0.0.0',

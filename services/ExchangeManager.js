@@ -4,6 +4,8 @@ const GateClient = require('./GateClient');
 const GateWebSocket = require('./GateWebSocket');
 const BitgetClient = require('./BitgetClient');
 const BitgetWebSocket = require('./BitgetWebSocket');
+const BinanceClient = require('./BinanceClient');
+const BinanceWebSocket = require('./BinanceWebSocket');
 const PnLCalculator = require('../utils/calculator');
 
 class ExchangeManager {
@@ -34,6 +36,9 @@ class ExchangeManager {
       const passphrase = config.exchange_passphrase || 'mairin99';
       this.client = new BitgetClient(config.exchange_api_key, config.exchange_secret, passphrase);
       this.ws = new BitgetWebSocket(config.exchange_api_key, config.exchange_secret, passphrase);
+    } else if (this.exchangeType === 'Binance') {
+      this.client = new BinanceClient(config.exchange_api_key, config.exchange_secret);
+      this.ws = new BinanceWebSocket(config.exchange_api_key, config.exchange_secret);
     }
   }
 
@@ -180,8 +185,9 @@ class ExchangeManager {
 
     // Skip market orders - position update will handle the notification
     const isMarketOrder = orderType === 5 || orderType === 6;
+    const exchangeLower = this.exchangeType.toLowerCase();
 
-    if (isMarketOrder && this.exchangeName.toLowerCase() !== 'bitget') {
+    if (isMarketOrder && exchangeLower !== 'bitget' && exchangeLower !== 'binance') {
       return;
     }
 

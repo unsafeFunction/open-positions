@@ -4,7 +4,8 @@ class MessageFormatter {
   static EXCHANGE_URLS = {
     'MEXC': (symbol) => `https://futures.mexc.com/exchange/${symbol}`,
     'GATE': (symbol) => `https://www.gate.io/futures_trade/USDT/${symbol}`,
-    'Bitget': (symbol) => `https://www.bitget.com/futures/usdt/${symbol}`
+    'Bitget': (symbol) => `https://www.bitget.com/futures/usdt/${symbol}`,
+    'Binance': (symbol) => `https://www.binance.com/en/futures/${symbol}`
   };
 
   static calculateDollarValue(vol, contractSize, price) {
@@ -40,7 +41,7 @@ class MessageFormatter {
 
     const sortedSymbols = Array.from(groupedBySymbol.keys()).sort();
 
-    let message = '<b>ОТКРЫТЫЕ ПОЗИЦИИ</b>\n';
+    let message = '📊 <b>ОТКРЫТЫЕ ПОЗИЦИИ</b>\n';
 
     for (const symbol of sortedSymbols) {
       const positions = groupedBySymbol.get(symbol);
@@ -115,7 +116,7 @@ class MessageFormatter {
       case 'opened':
         const openValue = this.calculateDollarValue(position.holdVol, contractSize, position.holdAvgPrice);
         message = `<b>${exchangeName}</b>\n`;
-        message += `<b>Открыта позиция</b>\n`;
+        message += `🟢 <b>Открыта позиция</b>\n`;
         message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -132,7 +133,7 @@ class MessageFormatter {
           : '0.00';
 
         message = `<b>${exchangeName}</b>\n`;
-        message += `<b>Закрыта позиция</b>\n`;
+        message += `🔴 <b>Закрыта позиция</b>\n`;
         message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -146,7 +147,7 @@ class MessageFormatter {
         const newTotalValue = this.calculateDollarValue(position.holdVol, contractSize, position.holdAvgPrice);
 
         message = `<b>${exchangeName}</b>\n`;
-        message += `<b>Позиция увеличена</b>\n`;
+        message += `➕ <b>Позиция увеличена</b>\n`;
         message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -162,7 +163,7 @@ class MessageFormatter {
         const partialRealizedPnl = position.realised || 0;
 
         message = `<b>${exchangeName}</b>\n`;
-        message += `<b>Позиция уменьшена</b>\n`;
+        message += `➖ <b>Позиция уменьшена</b>\n`;
         message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -222,8 +223,7 @@ class MessageFormatter {
     else if (order.side === 4) sideText = 'Закрыть лонг';
 
     let message = `<b>${exchangeName}</b>\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━\n`;
-    message += `<b>Лимитный ордер — ${status}</b>\n`;
+    message += `📝 <b>Лимитный ордер — ${status}</b>\n`;
     message += `${sideText}\n\n`;
     message += `<code>${order.symbol}</code>\n`;
     message += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -256,8 +256,7 @@ class MessageFormatter {
     else if (order.side === 4) sideText = 'Закрыть лонг';
 
     let message = `<b>${exchangeName}</b>\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━\n`;
-    message += `<b>Ордер — ${status}</b>\n`;
+    message += `⚡ <b>Ордер — ${status}</b>\n`;
     message += `${sideText}\n\n`;
     message += `<code>${order.symbol}</code>\n`;
     message += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -283,12 +282,11 @@ class MessageFormatter {
     const exchangeName = order.exchangeName || `Exchange ${order.exchangeId}`;
     const triggerSide = order.triggerSide; // 1 = TP, 2 = SL
 
-    let typeText = 'TP/SL';
-    if (triggerSide === 1) typeText = 'Тейк профит';
-    else if (triggerSide === 2) typeText = 'Стоп лосс';
+    let typeText = '🎯 TP/SL';
+    if (triggerSide === 1) typeText = '🎯 Тейк профит';
+    else if (triggerSide === 2) typeText = '🛡️ Стоп лосс';
 
     let message = `<b>${exchangeName}</b>\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━\n`;
     message += `<b>${typeText} — ${status}</b>\n\n`;
     message += `<code>${order.symbol}</code>\n`;
     message += `━━━━━━━━━━━━━━━━━━━━\n`;
