@@ -50,7 +50,7 @@ class TelegramBotService {
       parse_mode: 'HTML'
     };
 
-    const typesWithButton = ['opened', 'limitOrderPlaced', 'planOrderPlaced'];
+    const typesWithButton = ['opened', 'limitOrderPlaced', 'marketOrderPlaced'];
     if (typesWithButton.includes(type) && exchangeUrl) {
       options.reply_markup = {
         inline_keyboard: [[
@@ -65,8 +65,8 @@ class TelegramBotService {
       'positionDecreased': 'pos',
       'limitOrderFilled': 'order',
       'limitOrderCancelled': 'order',
-      'planOrderTriggered': 'order',
-      'planOrderCancelled': 'order'
+      'marketOrderFilled': 'order',
+      'marketOrderCancelled': 'order'
     };
 
     if (replyTypes[type]) {
@@ -85,7 +85,7 @@ class TelegramBotService {
       if (type === 'opened') {
         const key = this.getPositionKey(position);
         this.messageTracker.set(key, sentMessage.message_id);
-      } else if (type === 'limitOrderPlaced' || type === 'planOrderPlaced') {
+      } else if (type === 'limitOrderPlaced' || type === 'marketOrderPlaced') {
         const key = this.getOrderKey(position);
         this.messageTracker.set(key, sentMessage.message_id);
       }
@@ -93,7 +93,7 @@ class TelegramBotService {
       if (type === 'closed') {
         const key = this.getPositionKey(position);
         this.messageTracker.delete(key);
-      } else if (['limitOrderFilled', 'limitOrderCancelled', 'planOrderTriggered', 'planOrderCancelled'].includes(type)) {
+      } else if (['limitOrderFilled', 'limitOrderCancelled', 'marketOrderFilled', 'marketOrderCancelled'].includes(type)) {
         const key = this.getOrderKey(position);
         this.messageTracker.delete(key);
       }

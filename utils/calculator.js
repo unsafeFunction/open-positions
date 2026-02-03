@@ -25,7 +25,7 @@ class PnLCalculator {
     if (absPnl < 0.01 && absPnl > 0) {
       return `${sign}$${parseFloat(pnl.toFixed(6))}`;
     }
-
+    
     return `${sign}$${parseFloat(pnl.toFixed(4))}`;
   }
 
@@ -33,12 +33,24 @@ class PnLCalculator {
     return `${(ratio * 100).toFixed(2)}%`;
   }
 
-  static formatPrice(price, decimals = 4) {
-    if (price === null || price === undefined || price === 0) {
-      return 'N/A';
-    }
-    return `$${parseFloat(parseFloat(price).toFixed(decimals))}`;
+static formatPrice(price, decimals = 4) {
+  if (price === null || price === undefined || Number(price) === 0) {
+    return 'N/A';
   }
+
+  const num = Number(price);
+
+  if (Math.abs(num) >= 1e-4) {
+    return `$${num.toFixed(decimals)}`;
+  }
+
+  const [mantissa, exponent] = num.toExponential().split('e');
+  const exp = Math.abs(Number(exponent));
+
+  const digits = mantissa.replace('.', '');
+
+  return `$0.0{${exp-1}}${digits}`;
+}
 }
 
 module.exports = PnLCalculator;

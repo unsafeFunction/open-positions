@@ -178,16 +178,24 @@ class MessageFormatter {
         message = this.formatLimitOrder('Отменен', position);
         break;
 
-      case 'planOrderPlaced':
-        message = this.formatPlanOrder('Размещен', position);
+      case 'marketOrderPlaced':
+        message = this.formatMarketOrder('Размещен', position);
         break;
 
-      case 'planOrderTriggered':
-        message = this.formatPlanOrder('Сработал', position);
+      case 'marketOrderFilled':
+        message = this.formatMarketOrder('Исполнен', position);
         break;
 
-      case 'planOrderCancelled':
-        message = this.formatPlanOrder('Отменен', position);
+      case 'marketOrderCancelled':
+        message = this.formatMarketOrder('Отменен', position);
+        break;
+
+      case 'stopOrderSet':
+        message = this.formatStopOrder('установлен', position);
+        break;
+
+      case 'stopOrderCancelled':
+        message = this.formatStopOrder('отменён', position);
         break;
     }
 
@@ -219,10 +227,11 @@ class MessageFormatter {
     return message;
   }
 
-  static formatPlanOrder(status, order) {
+  static formatMarketOrder(status, order) {
     const exchangeName = order.exchangeName || `Exchange ${order.exchangeId}`;
     const contractSize = order.contractSize || 1;
-    const orderValue = this.calculateDollarValue(order.vol, contractSize, order.price);
+    const price = order.dealAvgPrice || order.price || 0;
+    const orderValue = this.calculateDollarValue(order.vol, contractSize, price);
 
     let sideText = '';
     if (order.side === 1) sideText = 'Открыть лонг';
@@ -230,18 +239,12 @@ class MessageFormatter {
     else if (order.side === 3) sideText = 'Открыть шорт';
     else if (order.side === 4) sideText = 'Закрыть лонг';
 
-    let triggerTypeText = '';
-    if (order.triggerType === 1) triggerTypeText = 'Fair Price';
-    else if (order.triggerType === 2) triggerTypeText = 'Index Price';
-    else if (order.triggerType === 3) triggerTypeText = 'Last Price';
-
-    let trendText = order.trend === 1 ? 'вырастет до' : 'упадет до';
-
     let message = `<b>${exchangeName}</b>\n`;
-    message += `Триггер ордер — ${sideText}\n\n`;
+    message += `Маркет ордер — ${sideText}\n\n`;
     message += `<code>${order.symbol}</code>\n`;
-    message += `Триггер: ${trendText} ${PnLCalculator.formatPrice(order.triggerPrice)} (${triggerTypeText})\n`;
-    message += `Цена ордера: ${PnLCalculator.formatPrice(order.price)}\n`;
+    if (price > 0) {
+      message += `Цена: ${PnLCalculator.formatPrice(price)}\n`;
+    }
     message += `Объем: ${this.formatDollarValue(orderValue)}\n`;
     message += `Статус: ${status}`;
 
@@ -249,12 +252,27 @@ class MessageFormatter {
       message += `\nПлечо: ${order.leverage}x`;
     }
 
-    if (order.stopLossPrice && order.stopLossPrice > 0) {
-      message += `\nStop Loss: ${PnLCalculator.formatPrice(order.stopLossPrice)}`;
+    return message;
+  }
+
+  static formatStopOrder(status, order) {
+    const exchangeName = order.exchangeName || `Exchange ${order.exchangeId}`;
+    const triggerSide = order.triggerSide; // 1 = TP, 2 = SL
+
+    let typeText = 'TP/SL';
+    if (triggerSide === 1) typeText = 'Тейк профит';
+    else if (triggerSide === 2) typeText = 'Стоп лосс';
+
+    let message = `<b>${exchangeName}</b>\n`;
+    message += `${typeText} ${status}\n\n`;
+    message += `<code>${order.symbol}</code>\n`;
+
+    if (order.takeProfitPrice && parseFloat(order.takeProfitPrice) > 0) {
+      message += `Тейк профит: ${PnLCalculator.formatPrice(order.takeProfitPrice)}\n`;
     }
 
-    if (order.takeProfitPrice && order.takeProfitPrice > 0) {
-      message += `\nTake Profit: ${PnLCalculator.formatPrice(order.takeProfitPrice)}`;
+    if (order.stopLossPrice && parseFloat(order.stopLossPrice) > 0) {
+      message += `Стоп лосс: ${PnLCalculator.formatPrice(order.stopLossPrice)}`;
     }
 
     return message;

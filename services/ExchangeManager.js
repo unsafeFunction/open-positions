@@ -51,8 +51,8 @@ class ExchangeManager {
         this.handlePriceUpdate(data);
       });
 
-      this.ws.on('planOrderUpdate', (data) => {
-        this.handlePlanOrderUpdate(data);
+      this.ws.on('stopOrderUpdate', (data) => {
+        this.handleStopOrderUpdate(data);
       });
     }
   }
@@ -168,37 +168,15 @@ class ExchangeManager {
 
   async handleOrderUpdate(data) {
     const orderState = data.state;
-    const category = data.category;
+    const orderType = data.orderType; // 1=limit, 2=PostOnly, 3=IOC, 4=FOK, 5=market, 6=market-to-limit
     const dealVol = parseFloat(data.dealVol) || 0;
 
-    if (category === 1) {
-      const contractInfo = await this.getContractInfo(data.symbol);
-      const orderData = {
-        ...data,
-        exchangeId: this.exchangeId,
-        exchangeName: this.exchangeName,
-        exchangeType: this.exchangeType,
-        contractSize: contractInfo.contractSize
-      };
-
-      if (orderState === 2 && dealVol === 0) {
-        if (this.telegram) {
-          this.telegram.sendNotification('limitOrderPlaced', orderData);
-        }
-      } else if (orderState === 3) {
-        if (this.telegram) {
-          this.telegram.sendNotification('limitOrderFilled', orderData);
-        }
-      } else if (orderState === 4) {
-        if (this.telegram) {
-          this.telegram.sendNotification('limitOrderCancelled', orderData);
-        }
-      }
+    // Skip market orders - position update will handle the notification
+    const isMarketOrder = orderType === 5 || orderType === 6;
+    if (isMarketOrder) {
+      return;
     }
-  }
 
-  async handlePlanOrderUpdate(data) {
-    const state = data.state;
     const contractInfo = await this.getContractInfo(data.symbol);
     const orderData = {
       ...data,
@@ -208,17 +186,34 @@ class ExchangeManager {
       contractSize: contractInfo.contractSize
     };
 
-    if (state === 1) {
+    if (orderState === 2 && dealVol === 0) {
       if (this.telegram) {
-        this.telegram.sendNotification('planOrderPlaced', orderData);
+        this.telegram.sendNotification('limitOrderPlaced', orderData);
       }
-    } else if (state === 2) {
+    } else if (orderState === 4) {
       if (this.telegram) {
-        this.telegram.sendNotification('planOrderTriggered', orderData);
+        this.telegram.sendNotification('limitOrderCancelled', orderData);
       }
-    } else if (state === 3) {
-      if (this.telegram) {
-        this.telegram.sendNotification('planOrderCancelled', orderData);
+    }
+  }
+
+  async handleStopOrderUpdate(data) {
+    const state = data.state;
+
+    const contractInfo = await this.getContractInfo(data.symbol);
+    const orderData = {
+      ...data,
+      exchangeId: this.exchangeId,
+      exchangeName: this.exchangeName,
+      exchangeType: this.exchangeType,
+      contractSize: contractInfo.contractSize
+    };
+
+    if (this.telegram) {
+      if (state === 1) {
+        this.telegram.sendNotification('stopOrderSet', orderData);
+      } else if (state === 2) {
+        this.telegram.sendNotification('stopOrderCancelled', orderData);
       }
     }
   }

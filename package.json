@@ -4,7 +4,7 @@
   "description": "Multi-exchange position tracker for MEXC and Gate.io",
   "main": "main.js",
   "scripts": {
-    "start": "node main.js",
+    "start": "nodemon main.js",
     "dev": "NODE_ENV=development node main.js",
     "build": "rollup -c && chmod +x dist/bundle.js && npm run build:copy-deps && echo '✅ Production build created in dist/'",
     "build:copy-deps": "cp -r node_modules dist/ 2>/dev/null || echo 'Skipping node_modules copy'",
