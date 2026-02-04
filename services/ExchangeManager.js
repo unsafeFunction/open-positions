@@ -6,6 +6,8 @@ const BitgetClient = require('./BitgetClient');
 const BitgetWebSocket = require('./BitgetWebSocket');
 const BinanceClient = require('./BinanceClient');
 const BinanceWebSocket = require('./BinanceWebSocket');
+const BybitClient = require('./BybitClient');
+const BybitWebSocket = require('./BybitWebSocket');
 const PnLCalculator = require('../utils/calculator');
 
 class ExchangeManager {
@@ -39,6 +41,9 @@ class ExchangeManager {
     } else if (this.exchangeType === 'Binance') {
       this.client = new BinanceClient(config.exchange_api_key, config.exchange_secret);
       this.ws = new BinanceWebSocket(config.exchange_api_key, config.exchange_secret);
+    } else if (this.exchangeType === 'ByBit') {
+      this.client = new BybitClient(config.exchange_api_key, config.exchange_secret);
+      this.ws = new BybitWebSocket(config.exchange_api_key, config.exchange_secret);
     }
   }
 
@@ -69,38 +74,54 @@ class ExchangeManager {
   }
 
   async loadInitialPositions() {
-    // const positions = await this.client.fetchOpenPositions();
-    // for (const position of positions) {
-    //   const contractInfo = await this.getContractInfo(position.symbol);
+    const positions = await this.client.fetchOpenPositions();
 
-    //   let currentPrice = contractInfo.fairPrice;
-    //   if (!currentPrice || currentPrice === 0) {
-    //     currentPrice = parseFloat(position.fairPrice || position.holdAvgPrice || 0);
-    //   }
+    for (const position of positions) {
+      const contractInfo = await this.getContractInfo(position.symbol);
 
-    //   const unrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
-    //     { ...position, contractSize: contractInfo.contractSize },
-    //     currentPrice
-    //   );
+      // Use currentPrice from API if available, otherwise from contract info
+      let currentPrice = position.currentPrice || contractInfo.fairPrice;
+      if (!currentPrice || currentPrice === 0) {
+        currentPrice = parseFloat(position.holdAvgPrice || 0);
+      }
 
-    //   const key = `${position.symbol}_${position.positionId}`;
-    //   this.positions.set(key, {
-    //     ...position,
-    //     exchangeId: this.exchangeId,
-    //     exchangeName: this.exchangeName,
-    //     contractSize: contractInfo.contractSize,
-    //     currentPrice: currentPrice,
-    //     unrealizedPnl: unrealizedPnl,
-    //     positionValue: PnLCalculator.calculatePositionValue(
-    //       position.holdVol,
-    //       contractInfo.contractSize,
-    //       currentPrice
-    //     )
-    //   });
-    //   this.ws.subscribeToPrice(position.symbol);
-    // }
+      // Use unrealizedPnl from API if available (Bybit provides it)
+      let unrealizedPnl = position.unrealisedPnl ?? position.unrealizedPnl;
+      if (unrealizedPnl === undefined || unrealizedPnl === null) {
+        unrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
+          { ...position, contractSize: contractInfo.contractSize },
+          currentPrice
+        );
+      }
 
-    // this.notifyPositionTracker();
+      // Use positionValue from API if available (Bybit), otherwise calculate
+      let positionValue = position.positionValue;
+      if (!positionValue || positionValue === 0) {
+        if (this.exchangeType === 'ByBit') {
+          positionValue = position.holdVol * currentPrice;
+        } else {
+          positionValue = PnLCalculator.calculatePositionValue(
+            position.holdVol,
+            contractInfo.contractSize,
+            currentPrice
+          );
+        }
+      }
+
+      const key = `${position.symbol}_${position.positionId}`;
+      this.positions.set(key, {
+        ...position,
+        exchangeId: this.exchangeId,
+        exchangeName: this.exchangeName,
+        contractSize: contractInfo.contractSize,
+        currentPrice: currentPrice,
+        unrealizedPnl: unrealizedPnl,
+        positionValue: positionValue
+      });
+      this.ws.subscribeToPrice(position.symbol);
+    }
+
+    this.notifyPositionTracker();
   }
 
   async getContractInfo(symbol) {
@@ -165,14 +186,18 @@ class ExchangeManager {
     }
 
     if (state === 1) {
+      // Use values from API if provided, otherwise fallback to previous/default
+      const currentPrice = data.currentPrice || prevPosition?.currentPrice || 0;
+      const positionValue = data.positionValue || prevPosition?.positionValue || 0;
+
       this.positions.set(key, {
         ...data,
         exchangeId: this.exchangeId,
         exchangeName: this.exchangeName,
         contractSize: prevPosition?.contractSize || 1,
-        currentPrice: prevPosition?.currentPrice || 0,
+        currentPrice: currentPrice,
         unrealizedPnl: parseFloat(data.pnl || 0),
-        positionValue: prevPosition?.positionValue || 0
+        positionValue: positionValue
       });
       this.notifyPositionTracker();
     }
@@ -266,11 +291,17 @@ class ExchangeManager {
         if (Math.abs(newUnrealizedPnl - oldUnrealizedPnl) > threshold) {
           position.currentPrice = price;
           position.unrealizedPnl = newUnrealizedPnl;
-          position.positionValue = PnLCalculator.calculatePositionValue(
-            position.holdVol,
-            position.contractSize,
-            price
-          );
+
+          // For Bybit, holdVol is base asset quantity (e.g. 0.0001 BTC), no contractSize needed
+          if (this.exchangeType === 'ByBit') {
+            position.positionValue = position.holdVol * price;
+          } else {
+            position.positionValue = PnLCalculator.calculatePositionValue(
+              position.holdVol,
+              position.contractSize,
+              price
+            );
+          }
           updated = true;
         }
       }

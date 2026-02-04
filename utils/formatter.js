@@ -5,7 +5,8 @@ class MessageFormatter {
     'MEXC': (symbol) => `https://futures.mexc.com/exchange/${symbol}`,
     'GATE': (symbol) => `https://www.gate.io/futures_trade/USDT/${symbol}`,
     'Bitget': (symbol) => `https://www.bitget.com/futures/usdt/${symbol}`,
-    'Binance': (symbol) => `https://www.binance.com/en/futures/${symbol}`
+    'Binance': (symbol) => `https://www.binance.com/en/futures/${symbol}`,
+    'Bybit': (symbol) => `https://www.bybit.com/trade/usdt/${symbol}`
   };
 
   static calculateDollarValue(vol, contractSize, price) {
