@@ -12,6 +12,7 @@ class MexcWebSocket extends EventEmitter {
     this.ws = null;
     this.pingInterval = null;
     this.priceSubscriptions = new Set();
+    this.isDisconnecting = false;
   }
 
   generateSignature(reqTime) {
@@ -40,7 +41,9 @@ class MexcWebSocket extends EventEmitter {
 
     this.ws.on('close', () => {
       this.stopPing();
-      setTimeout(() => this.connect(), 5000);
+      if (!this.isDisconnecting) {
+        setTimeout(() => this.connect(), 5000);
+      }
     });
   }
 
@@ -134,9 +137,11 @@ class MexcWebSocket extends EventEmitter {
   }
 
   disconnect() {
+    this.isDisconnecting = true;
     this.stopPing();
     if (this.ws) {
       this.ws.close();
+      this.ws = null;
     }
   }
 }

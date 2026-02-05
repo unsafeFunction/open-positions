@@ -28,6 +28,11 @@ class ApiWebSocket extends EventEmitter {
         this.emit('exchangeCreated', data);
       });
 
+      this.ws.on('exchange:deleted', (data) => {
+        console.log('📥 EXCHANGE DELETED:', data);
+        this.emit('exchangeDeleted', data);
+      });
+
       this.ws.on('error', (error) => {
         console.error('❌ API WebSocket Error:', error.message);
       });

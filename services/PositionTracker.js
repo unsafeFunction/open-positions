@@ -32,6 +32,10 @@ class PositionTracker extends EventEmitter {
     this.apiWs.on('exchangeCreated', async (eventData) => {
       await this.handleExchangeCreated(eventData);
     });
+
+    this.apiWs.on('exchangeDeleted', (eventData) => {
+      this.handleExchangeDeleted(eventData);
+    });
   }
 
   async initializeExchanges(userData) {
@@ -83,6 +87,14 @@ class PositionTracker extends EventEmitter {
     }
 
     await this.addExchange(eventData.exchange);
+  }
+
+  handleExchangeDeleted(eventData) {
+    const exchangeId = eventData.exchange?.id;
+    if (exchangeId) {
+      console.log(`🗑️ Exchange deleted: ${eventData.exchange.name} (${exchangeId})`);
+      this.removeExchange(exchangeId);
+    }
   }
 
   updatePositions(exchangeId, exchangePositions) {

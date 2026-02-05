@@ -97,7 +97,8 @@ class ExchangeManager {
       // Use positionValue from API if available (Bybit), otherwise calculate
       let positionValue = position.positionValue;
       if (!positionValue || positionValue === 0) {
-        if (this.exchangeType === 'ByBit') {
+        // For Bybit and Bitget, holdVol is base asset quantity (e.g. 0.0001 BTC), no contractSize needed
+        if (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget') {
           positionValue = position.holdVol * currentPrice;
         } else {
           positionValue = PnLCalculator.calculatePositionValue(
@@ -109,11 +110,15 @@ class ExchangeManager {
       }
 
       const key = `${position.symbol}_${position.positionId}`;
+      // For Bybit and Bitget, holdVol is already in base asset, so contractSize should be 1
+      const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
+        ? 1
+        : contractInfo.contractSize;
       this.positions.set(key, {
         ...position,
         exchangeId: this.exchangeId,
         exchangeName: this.exchangeName,
-        contractSize: contractInfo.contractSize,
+        contractSize: effectiveContractSize,
         currentPrice: currentPrice,
         unrealizedPnl: unrealizedPnl,
         positionValue: positionValue
@@ -144,12 +149,16 @@ class ExchangeManager {
       // Skip notification for initial snapshot (existing positions on startup)
       if (this.telegram && !data.isSnapshot) {
         const contractInfo = await this.getContractInfo(data.symbol);
+        // For Bybit and Bitget, holdVol is already in base asset, so contractSize should be 1
+        const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
+          ? 1
+          : contractInfo.contractSize;
         this.telegram.sendNotification('opened', {
           ...data,
           exchangeId: this.exchangeId,
           exchangeName: this.exchangeName,
           exchangeType: this.exchangeType,
-          contractSize: contractInfo.contractSize
+          contractSize: effectiveContractSize
         });
       }
     }
@@ -217,12 +226,16 @@ class ExchangeManager {
     }
 
     const contractInfo = await this.getContractInfo(data.symbol);
+    // For Bybit and Bitget, holdVol is already in base asset, so contractSize should be 1
+    const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
+      ? 1
+      : contractInfo.contractSize;
     const orderData = {
       ...data,
       exchangeId: this.exchangeId,
       exchangeName: this.exchangeName,
       exchangeType: this.exchangeType,
-      contractSize: contractInfo.contractSize
+      contractSize: effectiveContractSize
     };
 
     // const isMarketOrder = orderType === 5 || orderType === 6;
@@ -257,12 +270,16 @@ class ExchangeManager {
     const state = data.state;
 
     const contractInfo = await this.getContractInfo(data.symbol);
+    // For Bybit and Bitget, holdVol is already in base asset, so contractSize should be 1
+    const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
+      ? 1
+      : contractInfo.contractSize;
     const orderData = {
       ...data,
       exchangeId: this.exchangeId,
       exchangeName: this.exchangeName,
       exchangeType: this.exchangeType,
-      contractSize: contractInfo.contractSize
+      contractSize: effectiveContractSize
     };
 
     if (this.telegram) {
@@ -292,8 +309,8 @@ class ExchangeManager {
           position.currentPrice = price;
           position.unrealizedPnl = newUnrealizedPnl;
 
-          // For Bybit, holdVol is base asset quantity (e.g. 0.0001 BTC), no contractSize needed
-          if (this.exchangeType === 'ByBit') {
+          // For Bybit and Bitget, holdVol is base asset quantity (e.g. 0.0001 BTC), no contractSize needed
+          if (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget') {
             position.positionValue = position.holdVol * price;
           } else {
             position.positionValue = PnLCalculator.calculatePositionValue(
