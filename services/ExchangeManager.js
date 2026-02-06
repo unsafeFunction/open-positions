@@ -285,7 +285,17 @@ class ExchangeManager {
   }
 
   async handleStopOrderUpdate(data) {
-    const state = data.state;
+    let state = data.state;
+
+    // If TP/SL reports as "set" but the position is already closed, treat as cancelled
+    if (state === 1) {
+      const hasOpenPosition = Array.from(this.positions.entries()).some(
+        ([key, pos]) => key.startsWith(data.symbol + '_') && pos.state === 1
+      );
+      if (!hasOpenPosition) {
+        state = 2;
+      }
+    }
 
     const contractInfo = await this.getContractInfo(data.symbol);
     // For Bybit and Bitget, holdVol is already in base asset, so contractSize should be 1

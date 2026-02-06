@@ -396,12 +396,15 @@ class BitgetWebSocket extends EventEmitter {
       case 'cancelled':
       case 'canceled':
       case 'fail_trigger':
+      case 'expired':
+      case 'order_failed':
         return 2;
       case 'triggered':
       case 'executed':
         return 3;
       default:
-        return 1;
+        console.log(`Bitget unknown algo order status: "${status}", treating as cancelled`);
+        return 2;
     }
   }
 
