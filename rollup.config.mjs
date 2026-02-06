@@ -29,5 +29,5 @@ export default {
       }
     }
   ],
-  external: (id) => !id.startsWith('.') && !id.startsWith('/')
+  external: (id) => id !== 'main.js' && !id.startsWith('.') && !id.startsWith('/')
 };
