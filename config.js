@@ -22,7 +22,7 @@ module.exports = {
     restUrl: 'https://api.bybit.com'
   },
   webapp: {
-    port: parseInt(process.env.WEBAPP_PORT) || 3002,
+    port: parseInt(process.env.PORT || process.env.WEBAPP_PORT) || 3002,
     host: process.env.WEBAPP_HOST || '0.0.0.0',
     url: process.env.WEBAPP_URL,
     corsOrigins: process.env.WEBAPP_CORS_ORIGINS?.split(',') || [

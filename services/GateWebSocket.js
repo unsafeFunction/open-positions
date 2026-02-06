@@ -12,6 +12,7 @@ class GateWebSocket extends EventEmitter {
     this.ws = null;
     this.pingInterval = null;
     this.priceSubscriptions = new Set();
+    this.knownAutoOrders = new Set(); // Track known autoorder IDs to avoid duplicate notifications
   }
 
   generateSignature(channel, event, timestamp) {
@@ -140,7 +141,7 @@ class GateWebSocket extends EventEmitter {
               leverage: parseFloat(order.leverage || 0),
               state: this.mapGateOrderStatus(order.status, order.finish_as),
               dealVol: Math.abs(parseFloat(order.size)) - Math.abs(parseFloat(order.left || 0)),
-              category: 1,
+              orderType: this.mapGateOrderType(order.price, order.tif),
               pnl: parseFloat(order.pnl || order.realised_pnl || 0)
             };
             this.emit('orderUpdate', orderData);
@@ -151,24 +152,35 @@ class GateWebSocket extends EventEmitter {
       if (message.event === 'update' && message.channel === 'futures.autoorders') {
         if (message.result && Array.isArray(message.result)) {
           message.result.forEach(order => {
-            const size = order.initial?.size || order.size || 0;
-            const price = order.initial?.price || order.price || 0;
-            const triggerPrice = parseFloat(order.trigger?.price || order.trigger || 0);
-            const triggerRule = order.trigger?.rule || order.trigger_rule;
+            const orderId = order.id;
+            const triggerPrice = parseFloat(order.trigger?.price || 0);
+            const rule = order.trigger?.rule;
+            const state = this.mapGateAutoOrderStatus(order.status, order.finish_as);
+
+            // Skip already known open orders (avoid duplicate notifications)
+            if (state === 1 && this.knownAutoOrders.has(orderId)) {
+              return;
+            }
+
+            if (state === 1) {
+              this.knownAutoOrders.add(orderId);
+            } else {
+              this.knownAutoOrders.delete(orderId);
+            }
+
+            // rule 1 (>=) = SL, rule 2 (<=) = TP
+            const isTP = rule === 2 || rule === '<=';
+            const triggerSide = isTP ? 1 : 2;
 
             const orderData = {
               symbol: order.initial?.contract || order.contract,
-              orderId: order.id,
-              vol: Math.abs(parseFloat(size)),
-              price: parseFloat(price),
-              triggerPrice: triggerPrice,
-              triggerType: 3,
-              side: this.mapGateSide(size, order.is_close),
-              leverage: parseFloat(order.leverage || 0),
-              state: this.mapGateAutoOrderStatus(order.status, order.finish_as),
-              trend: this.mapGateTrend(triggerRule)
+              orderId: orderId,
+              state: state,
+              triggerSide: triggerSide,
+              takeProfitPrice: isTP ? triggerPrice : 0,
+              stopLossPrice: isTP ? 0 : triggerPrice
             };
-            this.emit('planOrderUpdate', orderData);
+            this.emit('stopOrderUpdate', orderData);
           });
         }
       }
@@ -199,6 +211,18 @@ class GateWebSocket extends EventEmitter {
     return isLong ? 1 : 3;  // 1 = Open Long, 3 = Open Short
   }
 
+  mapGateOrderType(price, tif) {
+    // Market orders on Gate have price = 0
+    if (parseFloat(price) === 0) return 5; // market
+    // 1=limit, 2=PostOnly, 3=IOC, 4=FOK
+    switch (tif) {
+      case 'poc': return 2;
+      case 'ioc': return 3;
+      case 'fok': return 4;
+      default: return 1; // gtc = limit
+    }
+  }
+
   mapGateOrderStatus(status, finishAs) {
     if (status === 'open') return 2;
     if (status === 'finished') {
@@ -212,10 +236,14 @@ class GateWebSocket extends EventEmitter {
     return 2;
   }
 
-  mapGateAutoOrderStatus(status) {
+  mapGateAutoOrderStatus(status, finishAs) {
+    // 1 = set, 2 = cancelled, 3 = triggered (ExchangeManager only handles 1 and 2)
     if (status === 'open') return 1;
-    if (status === 'finished' || status === 'succeeded') return 2;
-    if (status === 'cancelled') return 3;
+    if (status === 'cancelled') return 2;
+    if (status === 'finished') {
+      if (finishAs === 'cancelled') return 2;
+      return 3; // succeeded = triggered
+    }
     return 1;
   }
 

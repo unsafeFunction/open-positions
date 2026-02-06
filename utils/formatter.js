@@ -115,8 +115,9 @@ class MessageFormatter {
     switch(type) {
       case 'opened':
         const openValue = this.calculateDollarValue(position.holdVol, contractSize, position.holdAvgPrice);
+        const openMethod = position.openedByMarket ? 'маркетом' : 'лимиткой';
         message = `<b>${exchangeName}</b>\n`;
-        message += `🟢 <b>Открыта позиция</b>\n`;
+        message += `🟢 <b>Открыта позиция ${openMethod}</b>\n`;
         message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -221,7 +222,7 @@ class MessageFormatter {
     if (order.side === 1) sideText = 'Открыть лонг';
     else if (order.side === 2) sideText = 'Закрыть шорт';
     else if (order.side === 3) sideText = 'Открыть шорт';
-    else if (order.side === 4) sideText = 'Закрыть лонг';
+    else if (order.side === 4) sideText = 'Закрыть лонг'; 
 
     let message = `<b>${exchangeName}</b>\n`;
     message += `📝 <b>Лимитный ордер — ${status}</b>\n`;
@@ -282,7 +283,7 @@ class MessageFormatter {
   static formatStopOrder(status, order) {
     const exchangeName = order.exchangeName || `Exchange ${order.exchangeId}`;
     const triggerSide = order.triggerSide; // 1 = TP, 2 = SL
-
+    console.log(order)
     let typeText = '🎯 TP/SL';
     if (triggerSide === 1) typeText = '🎯 Тейк профит';
     else if (triggerSide === 2) typeText = '🛡️ Стоп лосс';

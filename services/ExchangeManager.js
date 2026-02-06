@@ -24,6 +24,8 @@ class ExchangeManager {
     this.positions = new Map();
     this.contractCache = new Map();
 
+    this.recentOrderTypes = new Map(); // symbol -> orderType (1=limit, 5=market, etc.)
+
     this.initializeClients(exchangeConfig);
   }
 
@@ -152,12 +154,17 @@ class ExchangeManager {
         const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
           ? 1
           : contractInfo.contractSize;
+        const recentOrderType = this.recentOrderTypes.get(data.symbol);
+        this.recentOrderTypes.delete(data.symbol);
+        const isMarket = !recentOrderType || recentOrderType === 5 || recentOrderType === 6;
+
         this.telegram.sendNotification('opened', {
           ...data,
           exchangeId: this.exchangeId,
           exchangeName: this.exchangeName,
           exchangeType: this.exchangeType,
-          contractSize: effectiveContractSize
+          contractSize: effectiveContractSize,
+          openedByMarket: isMarket
         });
       }
     }
@@ -167,6 +174,9 @@ class ExchangeManager {
         this.telegram.sendNotification('closed', {
           ...prevPosition,
           ...data,
+          holdAvgPrice: data.holdAvgPrice || prevPosition.holdAvgPrice,
+          holdVol: data.holdVol || prevPosition.holdVol,
+          currentPrice: prevPosition.holdAvgPrice,
           exchangeId: this.exchangeId,
           exchangeName: this.exchangeName,
           exchangeType: this.exchangeType
@@ -220,6 +230,12 @@ class ExchangeManager {
     const orderState = data.state;
     const orderType = data.orderType; // 1=limit, 2=PostOnly, 3=IOC, 4=FOK, 5=market, 6=market-to-limit
     const dealVol = parseFloat(data.dealVol) || 0;
+
+    // Track order type for opening orders (side 1 = open long, side 3 = open short)
+    const isOpening = data.side === 1 || data.side === 3;
+    if (isOpening) {
+      this.recentOrderTypes.set(data.symbol, orderType);
+    }
 
     // Skip market orders - position update will handle the notification
     const isMarketOrder = orderType === 5 || orderType === 6;
