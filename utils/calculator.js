@@ -10,9 +10,6 @@ class PnLCalculator {
     } else {
       priceDiff = holdAvgPrice - currentPrice;
     }
-    // console.log(priceDiff, holdVol, contractSize)
-    // Неверная цена контракта
-    // console.log(priceDiff * holdVol * contractSize)
     return priceDiff * holdVol * contractSize;
   }
 

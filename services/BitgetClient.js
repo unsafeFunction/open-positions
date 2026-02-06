@@ -90,7 +90,7 @@ class BitgetClient {
 
     return {
       symbol: pos.symbol,
-      positionId: pos.posId || pos.symbol,
+      positionId: `${pos.symbol}_${pos.holdSide}`,
       holdVol: Math.abs(size),
       holdAvgPrice: parseFloat(pos.openPriceAvg || 0),
       positionType: isLong ? 1 : 2,

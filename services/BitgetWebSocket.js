@@ -56,7 +56,7 @@ class BitgetWebSocket extends EventEmitter {
   }
 
   connectPublic() {
-    if (this.wsPublic && this.wsPublic.readyState === WebSocket.OPEN) {
+    if (this.wsPublic && (this.wsPublic.readyState === WebSocket.OPEN || this.wsPublic.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
@@ -206,7 +206,7 @@ class BitgetWebSocket extends EventEmitter {
 
       const positionData = {
         symbol: pos.instId || pos.symbol,
-        positionId: pos.posId || pos.instId || pos.symbol,
+        positionId: `${pos.instId || pos.symbol}_${pos.holdSide}`,
         holdVol: Math.abs(size),
         holdAvgPrice: parseFloat(pos.openPriceAvg || pos.averageOpenPrice || 0),
         positionType: isLong ? 1 : 2,

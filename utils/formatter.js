@@ -71,7 +71,6 @@ class MessageFormatter {
         totalValue += posValue;
         totalUnrealizedPnL += unrealizedPnl;
         totalRealizedPnL += realizedPnl;
-
         message += `<b>${exchangeName}</b>\n`;
         message += `${side} | ${mode} | ${pos.leverage}x\n`;
         message += `Объем: ${this.formatDollarValue(posValue)}\n`;
@@ -79,7 +78,7 @@ class MessageFormatter {
         message += `Текущая: ${PnLCalculator.formatPrice(pos.currentPrice)}\n`;
         message += `Нереализ: ${PnLCalculator.formatPnL(unrealizedPnl)}\n`;
         message += `Реализ: ${PnLCalculator.formatPnL(realizedPnl)}\n`;
-        message += `Ликвид: ${PnLCalculator.formatPrice(pos.liquidatePrice)}\n`;
+        message += `Ликвид: ${PnLCalculator.formatPrice(Math.abs(pos.liquidatePrice))}\n`;
 
         if (idx < positions.length - 1) {
           message += `---\n`;
@@ -124,7 +123,7 @@ class MessageFormatter {
         message += `<b>ТВХ:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
         message += `<b>Объем:</b> ${this.formatDollarValue(openValue)}\n`;
         message += `<b>Плечо:</b> ${position.leverage}x\n`;
-        message += `<b>Ликвид:</b> ${PnLCalculator.formatPrice(position.liquidatePrice)}`;
+        message += `<b>Ликвид:</b> ${PnLCalculator.formatPrice(Math.abs(position.liquidatePrice))}`;
         break;
 
       case 'closed':
