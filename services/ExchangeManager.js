@@ -35,7 +35,7 @@ class ExchangeManager {
       this.client = new GateClient(config.exchange_api_key, config.exchange_secret);
       this.ws = new GateWebSocket(config.exchange_api_key, config.exchange_secret);
     } else if (this.exchangeType === 'Bitget') {
-      const passphrase = config.exchange_passphrase || 'mairin99';
+      const passphrase = config.passphrase;
       this.client = new BitgetClient(config.exchange_api_key, config.exchange_secret, passphrase);
       this.ws = new BitgetWebSocket(config.exchange_api_key, config.exchange_secret, passphrase);
     } else if (this.exchangeType === 'Binance') {
@@ -78,7 +78,6 @@ class ExchangeManager {
 
     for (const position of positions) {
       const contractInfo = await this.getContractInfo(position.symbol);
-
       // Use currentPrice from API if available, otherwise from contract info
       let currentPrice = position.currentPrice || contractInfo.fairPrice;
       if (!currentPrice || currentPrice === 0) {
@@ -195,6 +194,11 @@ class ExchangeManager {
     }
 
     if (state === 1) {
+      const contractInfo = await this.getContractInfo(data.symbol);
+      const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
+        ? 1
+        : contractInfo.contractSize;
+
       // Use values from API if provided, otherwise fallback to previous/default
       const currentPrice = data.currentPrice || prevPosition?.currentPrice || 0;
       const positionValue = data.positionValue || prevPosition?.positionValue || 0;
@@ -203,7 +207,7 @@ class ExchangeManager {
         ...data,
         exchangeId: this.exchangeId,
         exchangeName: this.exchangeName,
-        contractSize: prevPosition?.contractSize || 1,
+        contractSize: effectiveContractSize,
         currentPrice: currentPrice,
         unrealizedPnl: parseFloat(data.pnl || 0),
         positionValue: positionValue
@@ -237,8 +241,6 @@ class ExchangeManager {
       exchangeType: this.exchangeType,
       contractSize: effectiveContractSize
     };
-
-    // const isMarketOrder = orderType === 5 || orderType === 6;
 
     // For limit orders: notify when placed (state 2, no fills yet)
     if (!isMarketOrder && orderState === 2 && dealVol === 0) {
@@ -297,6 +299,7 @@ class ExchangeManager {
 
     this.positions.forEach((position, key) => {
       if (key.startsWith(symbol + '_')) {
+        // Проблема тут, контракт сайз 1, а должен быть не 1
         const newUnrealizedPnl = PnLCalculator.calculateUnrealizedPnL(
           position,
           price

@@ -10,7 +10,9 @@ class PnLCalculator {
     } else {
       priceDiff = holdAvgPrice - currentPrice;
     }
-
+    // console.log(priceDiff, holdVol, contractSize)
+    // Неверная цена контракта
+    // console.log(priceDiff * holdVol * contractSize)
     return priceDiff * holdVol * contractSize;
   }
 
@@ -35,7 +37,7 @@ class PnLCalculator {
 
 static formatPrice(price, decimals = 4) {
   if (price === null || price === undefined || Number(price) === 0) {
-    return 'N/A';
+    return '—';
   }
 
   const num = Number(price);

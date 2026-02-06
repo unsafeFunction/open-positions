@@ -123,7 +123,8 @@ class MessageFormatter {
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
         message += `<b>ТВХ:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
         message += `<b>Объем:</b> ${this.formatDollarValue(openValue)}\n`;
-        message += `<b>Плечо:</b> ${position.leverage}x`;
+        message += `<b>Плечо:</b> ${position.leverage}x\n`;
+        message += `<b>Ликвид:</b> ${PnLCalculator.formatPrice(position.liquidatePrice)}`;
         break;
 
       case 'closed':
