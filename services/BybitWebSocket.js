@@ -104,8 +104,11 @@ class BybitWebSocket extends EventEmitter {
 
     positions.forEach(pos => {
       const size = parseFloat(pos.size || 0);
-      const isLong = pos.side === 'Buy';
+      const positionIdx = Number(pos.positionIdx ?? 0);
+      const side = (pos.side || '').toLowerCase();
+      const isLong = positionIdx === 1 || (positionIdx !== 2 && side !== 'sell');
       const isIsolated = parseInt(pos.tradeMode) === 1;
+      const positionId = `${pos.symbol}_${positionIdx}`;
 
       // Bybit API provides ready values in USDT
       const positionValue = parseFloat(pos.positionValue || 0);
@@ -113,7 +116,7 @@ class BybitWebSocket extends EventEmitter {
 
       const positionData = {
         symbol: pos.symbol,
-        positionId: pos.symbol + '_' + pos.side,
+        positionId: positionId,
         holdVol: Math.abs(size),
         holdAvgPrice: parseFloat(pos.avgPrice || pos.entryPrice || 0),
         positionType: isLong ? 1 : 2,
@@ -126,6 +129,23 @@ class BybitWebSocket extends EventEmitter {
         currentPrice: markPrice,
         state: size !== 0 ? 1 : 3
       };
+
+      if (positionData.state === 3) {
+        // console.log('[Bybit][PositionCloseEvent][WS]', JSON.stringify({
+        //   raw: {
+        //     symbol: pos.symbol,
+        //     side: pos.side,
+        //     positionIdx: pos.positionIdx,
+        //     size: pos.size,
+        //     avgPrice: pos.avgPrice,
+        //     entryPrice: pos.entryPrice,
+        //     markPrice: pos.markPrice,
+        //     cumRealisedPnl: pos.cumRealisedPnl,
+        //     unrealisedPnl: pos.unrealisedPnl
+        //   },
+        //   mapped: positionData
+        // }));
+      }
 
       this.emit('positionUpdate', positionData);
     });
@@ -145,7 +165,9 @@ class BybitWebSocket extends EventEmitter {
       const orderType = order.orderType;
       const status = order.orderStatus;
       const executedQty = parseFloat(order.cumExecQty || 0);
-      const realizedPnl = parseFloat(order.cumExecFee || 0);
+      const realizedPnl = parseFloat(
+        order.closedPnl || order.cumExecPnl || order.execPnl || order.realisedPnl || order.realizedPnl || 0
+      );
       const reduceOnly = order.reduceOnly === true || order.reduceOnly === 'true';
       const stopOrderType = order.stopOrderType || '';
 
@@ -166,8 +188,23 @@ class BybitWebSocket extends EventEmitter {
         pnl: realizedPnl
       };
 
-      // Check if this is a TP/SL order
-      if (this.isStopOrder(stopOrderType)) {
+      // Bybit sends TP/SL via order updates: detect by dedicated stop fields/flags.
+      if (this.isTpSlOrderUpdate(order)) {
+        console.log('[Bybit][TpSlOrderUpdate]', JSON.stringify({
+          symbol: order.symbol,
+          orderId: order.orderId,
+          orderStatus: status,
+          orderType: order.orderType,
+          stopOrderType: order.stopOrderType,
+          orderFilter: order.orderFilter,
+          triggerPrice: order.triggerPrice,
+          takeProfit: order.takeProfit,
+          stopLoss: order.stopLoss,
+          tpslMode: order.tpslMode,
+          parentOrderLinkId: order.parentOrderLinkId,
+          reduceOnly: order.reduceOnly,
+          closeOnTrigger: order.closeOnTrigger
+        }));
         this.handleStopOrderFromOrder(order, orderData, status);
         return;
       }
@@ -177,8 +214,10 @@ class BybitWebSocket extends EventEmitter {
   }
 
   handleStopOrderFromOrder(order, orderData, status) {
-    const stopOrderType = order.stopOrderType || '';
+    const stopOrderType = (order.stopOrderType || '').toString();
     const triggerPrice = parseFloat(order.triggerPrice || 0);
+    const takeProfit = parseFloat(order.takeProfit || 0);
+    const stopLoss = parseFloat(order.stopLoss || 0);
     const orderId = order.orderId;
     const orderKey = `${orderId}_${status}`;
 
@@ -189,9 +228,9 @@ class BybitWebSocket extends EventEmitter {
     this.knownAlgoOrders.set(orderKey, true);
 
     let triggerSide = 0;
-    if (stopOrderType.includes('TakeProfit') || stopOrderType === 'PartialTakeProfit') {
+    if (stopOrderType.includes('TakeProfit') || (takeProfit > 0 && stopLoss <= 0)) {
       triggerSide = 1;
-    } else if (stopOrderType.includes('StopLoss') || stopOrderType === 'PartialStopLoss') {
+    } else if (stopOrderType.includes('StopLoss') || (stopLoss > 0 && takeProfit <= 0)) {
       triggerSide = 2;
     }
 
@@ -209,8 +248,8 @@ class BybitWebSocket extends EventEmitter {
       vol: orderData.vol,
       price: orderData.price,
       triggerSide: triggerSide,
-      takeProfitPrice: triggerSide === 1 ? triggerPrice : 0,
-      stopLossPrice: triggerSide === 2 ? triggerPrice : 0,
+      takeProfitPrice: takeProfit > 0 ? takeProfit : (triggerSide === 1 ? triggerPrice : 0),
+      stopLossPrice: stopLoss > 0 ? stopLoss : (triggerSide === 2 ? triggerPrice : 0),
       side: orderData.side,
       state: mappedState
     };
@@ -317,6 +356,20 @@ class BybitWebSocket extends EventEmitter {
   isStopOrder(stopOrderType) {
     return ['TakeProfit', 'StopLoss', 'PartialTakeProfit', 'PartialStopLoss',
             'TrailingStop', 'Stop'].includes(stopOrderType);
+  }
+
+  isTpSlOrderUpdate(order) {
+    const stopOrderType = (order.stopOrderType || '').toString();
+    const orderFilter = (order.orderFilter || '').toString();
+    const triggerPrice = parseFloat(order.triggerPrice || 0);
+    const takeProfit = parseFloat(order.takeProfit || 0);
+    const stopLoss = parseFloat(order.stopLoss || 0);
+
+    return this.isStopOrder(stopOrderType)
+      || ['StopOrder', 'tpslOrder'].includes(orderFilter)
+      || triggerPrice > 0
+      || takeProfit > 0
+      || stopLoss > 0;
   }
 
   disconnect() {

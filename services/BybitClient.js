@@ -32,7 +32,9 @@ class BybitClient {
 
   normalizePosition(pos) {
     const size = parseFloat(pos.size || 0);
-    const isLong = pos.side === 'Buy';
+    const positionIdx = Number(pos.positionIdx ?? 0);
+    const side = (pos.side || '').toLowerCase();
+    const isLong = positionIdx === 1 || (positionIdx !== 2 && side !== 'sell');
     const isIsolated = parseInt(pos.tradeMode) === 1;
 
     // Bybit API provides ready values in USDT
@@ -41,7 +43,7 @@ class BybitClient {
 
     return {
       symbol: pos.symbol,
-      positionId: pos.symbol + '_' + pos.side,
+      positionId: `${pos.symbol}_${positionIdx}`,
       holdVol: Math.abs(size),
       holdAvgPrice: parseFloat(pos.avgPrice || 0),
       positionType: isLong ? 1 : 2,

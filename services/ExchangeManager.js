@@ -186,6 +186,8 @@ class ExchangeManager {
         this.telegram.sendNotification('closed', {
           ...prevPosition,
           ...data,
+          positionType: prevPosition.positionType,
+          openType: prevPosition.openType,
           holdAvgPrice: data.holdAvgPrice || prevPosition.holdAvgPrice,
           holdVol: data.holdVol || prevPosition.holdVol,
           currentPrice: prevPosition.holdAvgPrice,
