@@ -13,6 +13,8 @@ class GateWebSocket extends EventEmitter {
     this.pingInterval = null;
     this.priceSubscriptions = new Set();
     this.knownAutoOrders = new Set(); // Track known autoorder IDs to avoid duplicate notifications
+    this.pendingPositionUpdates = new Map(); // symbol -> latest position data
+    this.positionUpdateTimers = new Map(); // symbol -> timeout id
   }
 
   generateSignature(channel, event, timestamp) {
@@ -39,6 +41,7 @@ class GateWebSocket extends EventEmitter {
 
     this.ws.on('close', () => {
       this.stopPing();
+      this.clearPositionUpdateTimers();
       setTimeout(() => this.connect(), 5000);
     });
   }
@@ -124,7 +127,7 @@ class GateWebSocket extends EventEmitter {
               pnl: parseFloat(position.unrealised_pnl || 0),
               state: Math.abs(size) > 0 ? 1 : 3
             };
-            this.emit('positionUpdate', positionData);
+            this.queuePositionUpdate(position.contract, positionData);
           });
         }
       }
@@ -132,6 +135,11 @@ class GateWebSocket extends EventEmitter {
       if (message.event === 'update' && message.channel === 'futures.orders') {
         if (message.result && Array.isArray(message.result)) {
           message.result.forEach(order => {
+            // Process only final order updates from Gate (finished/cancelled outcomes).
+            if (order.status !== 'finished') {
+              return;
+            }
+
             const orderData = {
               symbol: order.contract,
               orderId: order.id,
@@ -257,6 +265,39 @@ class GateWebSocket extends EventEmitter {
     if (rule === 1 || rule === '>=') return 1;
     if (rule === 2 || rule === '<=') return 2;
     return 1;
+  }
+
+  queuePositionUpdate(symbol, positionData) {
+    if (!symbol) {
+      return;
+    }
+
+    this.pendingPositionUpdates.set(symbol, positionData);
+
+    const existingTimer = this.positionUpdateTimers.get(symbol);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    // Gate may emit multiple fast updates for one fill; emit only the latest state.
+    const timer = setTimeout(() => {
+      const latest = this.pendingPositionUpdates.get(symbol);
+      if (latest) {
+        this.emit('positionUpdate', latest);
+        this.pendingPositionUpdates.delete(symbol);
+      }
+      this.positionUpdateTimers.delete(symbol);
+    }, 400);
+
+    this.positionUpdateTimers.set(symbol, timer);
+  }
+
+  clearPositionUpdateTimers() {
+    for (const timer of this.positionUpdateTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.positionUpdateTimers.clear();
+    this.pendingPositionUpdates.clear();
   }
 
   send(message) {
