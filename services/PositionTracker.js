@@ -49,7 +49,8 @@ class PositionTracker extends EventEmitter {
           botToken: userData.telegram_bot_key,
           chatId: userData.telegram_chat_id
         },
-        () => this.allPositions
+        () => this.allPositions,
+        () => this.getExchangeStatuses()
       );
       this.telegram.setupCommands();
       this.startTelegramUpdateInterval();
@@ -80,7 +81,8 @@ class PositionTracker extends EventEmitter {
           botToken: eventData.telegram_bot_key,
           chatId: eventData.telegram_chat_id
         },
-        () => this.allPositions
+        () => this.allPositions,
+        () => this.getExchangeStatuses()
       );
       this.telegram.setupCommands();
       this.startTelegramUpdateInterval();
@@ -135,6 +137,14 @@ class PositionTracker extends EventEmitter {
   getPositionsByExchange(exchangeName) {
     return Array.from(this.allPositions.values())
       .filter(p => p.exchangeName === exchangeName);
+  }
+
+  getExchangeStatuses() {
+    const statuses = [];
+    for (const manager of this.exchangeManagers.values()) {
+      statuses.push(manager.getStatus());
+    }
+    return statuses;
   }
 
   getCombinedPositions() {

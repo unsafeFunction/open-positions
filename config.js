@@ -21,6 +21,10 @@ module.exports = {
   bybit: {
     restUrl: 'https://api.bybit.com'
   },
+  bingx: {
+    restUrl: 'https://open-api.bingx.com',
+    wsUrl: 'wss://open-api-cswap-ws.bingx.com/market'
+  },
   webapp: {
     port: parseInt(process.env.PORT || process.env.WEBAPP_PORT) || 3002,
     host: process.env.WEBAPP_HOST || '0.0.0.0',

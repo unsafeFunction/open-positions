@@ -3,11 +3,12 @@ const MessageFormatter = require('../utils/formatter');
 const config = require('../config');
 
 class TelegramBotService {
-  constructor(telegramConfig, getPositionsCallback = null) {
+  constructor(telegramConfig, getPositionsCallback = null, getExchangeStatusesCallback = null) {
     this.bot = new TelegramBot(telegramConfig.botToken, { polling: true });
     this.chatId = telegramConfig.chatId;
     this.pinnedMessageId = null;
     this.getPositions = getPositionsCallback;
+    this.getExchangeStatuses = getExchangeStatusesCallback;
     this.webAppUrl = config.webapp?.url;
     this.messageTracker = new Map();
   }
@@ -108,6 +109,7 @@ class TelegramBotService {
       const commands = [
         '/positions - Show all current positions',
         '/positions SYMBOL - Show positions for specific symbol',
+        '/status - Show exchange connection statuses',
         '/chatid - Get your chat ID'
       ];
 
@@ -142,6 +144,29 @@ class TelegramBotService {
 
     this.bot.onText(/\/chatid(@\w+)?/, (msg) => {
       this.bot.sendMessage(msg.chat.id, `Your Chat ID: ${msg.chat.id}`);
+    });
+
+    this.bot.onText(/\/status(@\w+)?/, (msg) => {
+      if (!this.getExchangeStatuses) {
+        this.bot.sendMessage(msg.chat.id, 'Сервис статусов недоступен');
+        return;
+      }
+
+      const statuses = this.getExchangeStatuses();
+
+      if (statuses.length === 0) {
+        this.bot.sendMessage(msg.chat.id, 'Нет подключённых бирж');
+        return;
+      }
+
+      const lines = statuses.map(s => {
+        const statusEmoji = s.connected ? '🟢' : '🔴';
+        const posInfo = s.positionsCount > 0 ? ` | 📊 ${s.positionsCount} pos` : '';
+        return `${statusEmoji} <b>${s.exchangeName}</b> (${s.exchangeType})${posInfo}`;
+      });
+
+      const message = `📡 <b>Exchange Statuses</b>\n\n${lines.join('\n')}`;
+      this.bot.sendMessage(msg.chat.id, message, { parse_mode: 'HTML' });
     });
 
     this.bot.onText(/\/positions(@\w+)?(.*)/, async (msg, match) => {

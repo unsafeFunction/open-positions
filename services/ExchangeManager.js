@@ -8,6 +8,8 @@ const BinanceClient = require('./BinanceClient');
 const BinanceWebSocket = require('./BinanceWebSocket');
 const BybitClient = require('./BybitClient');
 const BybitWebSocket = require('./BybitWebSocket');
+const BingXClient = require('./BingXClient');
+const BingXWebSocket = require('./BingXWebSocket');
 const PnLCalculator = require('../utils/calculator');
 
 class ExchangeManager {
@@ -25,6 +27,7 @@ class ExchangeManager {
     this.contractCache = new Map();
 
     this.recentOrderTypes = new Map(); // symbol -> orderType (1=limit, 5=market, etc.)
+    this.isAuthenticated = false;
 
     this.initializeClients(exchangeConfig);
   }
@@ -46,6 +49,9 @@ class ExchangeManager {
     } else if (this.exchangeType === 'ByBit') {
       this.client = new BybitClient(config.exchange_api_key, config.exchange_secret);
       this.ws = new BybitWebSocket(config.exchange_api_key, config.exchange_secret);
+    } else if (this.exchangeType === 'BingX') {
+      this.client = new BingXClient(config.exchange_api_key, config.exchange_secret);
+      this.ws = new BingXWebSocket(config.exchange_api_key, config.exchange_secret);
     }
   }
 
@@ -54,6 +60,7 @@ class ExchangeManager {
       this.ws.connect();
 
       this.ws.on('authenticated', async () => {
+        this.isAuthenticated = true;
         await this.loadInitialPositions();
       });
 
@@ -99,7 +106,7 @@ class ExchangeManager {
       let positionValue = position.positionValue;
       if (!positionValue || positionValue === 0) {
         // For Bybit and Bitget, holdVol is base asset quantity (e.g. 0.0001 BTC), no contractSize needed
-        if (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget') {
+        if (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget' || this.exchangeType === 'BingX') {
           positionValue = position.holdVol * currentPrice;
         } else {
           positionValue = PnLCalculator.calculatePositionValue(
@@ -112,7 +119,7 @@ class ExchangeManager {
 
       const key = `${position.symbol}_${position.positionId}`;
       // For Bybit and Bitget, holdVol is already in base asset, so contractSize should be 1
-      const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
+      const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget' || this.exchangeType === 'BingX')
         ? 1
         : contractInfo.contractSize;
       this.positions.set(key, {
@@ -205,7 +212,7 @@ class ExchangeManager {
 
     if (state === 1) {
       const contractInfo = await this.getContractInfo(data.symbol);
-      const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
+      const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget' || this.exchangeType === 'BingX')
         ? 1
         : contractInfo.contractSize;
 
@@ -241,7 +248,7 @@ class ExchangeManager {
     const isMarketOrder = orderType === 5 || orderType === 6;
     const exchangeLower = this.exchangeType.toLowerCase();
 
-    if (isMarketOrder && exchangeLower !== 'bitget' && exchangeLower !== 'binance') {
+    if (isMarketOrder && exchangeLower !== 'bitget' && exchangeLower !== 'binance' && exchangeLower !== 'bingx') {
       return;
     }
 
@@ -339,7 +346,7 @@ class ExchangeManager {
           position.unrealizedPnl = newUnrealizedPnl;
 
           // For Bybit and Bitget, holdVol is base asset quantity (e.g. 0.0001 BTC), no contractSize needed
-          if (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget') {
+          if (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget' || this.exchangeType === 'BingX') {
             position.positionValue = position.holdVol * price;
           } else {
             position.positionValue = PnLCalculator.calculatePositionValue(
@@ -362,6 +369,15 @@ class ExchangeManager {
     if (this.positionTracker) {
       this.positionTracker.updatePositions(this.exchangeId, this.positions);
     }
+  }
+
+  getStatus() {
+    return {
+      exchangeName: this.exchangeName,
+      exchangeType: this.exchangeType,
+      connected: this.isAuthenticated,
+      positionsCount: this.positions.size
+    };
   }
 
   stop() {
