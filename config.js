@@ -23,7 +23,7 @@ module.exports = {
   },
   bingx: {
     restUrl: 'https://open-api.bingx.com',
-    wsUrl: 'wss://open-api-cswap-ws.bingx.com/market'
+    wsUrl: 'wss://open-api-swap.bingx.com/swap-market'
   },
   webapp: {
     port: parseInt(process.env.PORT || process.env.WEBAPP_PORT) || 3002,

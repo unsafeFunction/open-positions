@@ -10,6 +10,7 @@ class BinanceWebSocket extends EventEmitter {
     this.priceSubscriptions = new Set();
     this.knownAlgoOrders = new Map();
     this.pendingAlgoUpdates = new Map();
+    this.positionPnl = new Map(); // key: "BTCUSDT_LONG" -> { commission, realisedProfit }
   }
 
   connect() {
@@ -67,8 +68,6 @@ class BinanceWebSocket extends EventEmitter {
 
   handleMessage(data) {
     const eventType = data.eventType || data.e;
-
-
     switch (eventType) {
       case 'ACCOUNT_UPDATE':
       case 'accountUpdate':
@@ -114,13 +113,18 @@ class BinanceWebSocket extends EventEmitter {
         state: size !== 0 ? 1 : 3
       };
 
+      // Reset commission tracker when position is fully closed
+      if (size === 0) {
+        const posKey = `${symbol}_${positionSide}`;
+        this.positionPnl.delete(posKey);
+      }
+
       this.emit('positionUpdate', positionData);
     });
   }
 
   handleOrderUpdate(data) {
     const order = data.order || data.o || data;
-
 
     const symbol = order.symbol || order.s;
     const orderId = order.orderId || order.i;
@@ -134,9 +138,27 @@ class BinanceWebSocket extends EventEmitter {
     const executedQty = parseFloat(order.orderFilledAccumulatedQuantity || order.executedQuantity || order.z || 0);
     const realizedProfit = parseFloat(order.realisedProfit || order.realizedProfit || order.rp || 0);
     const isReduceOnly = order.isReduceOnly || order.R || false;
+    const commissionAmount = parseFloat(order.commissionAmount || order.n || 0);
+    const executionType = order.executionType || order.x;
+
+    // Accumulate commission & realisedProfit per position on every TRADE fill
+    const posKey = `${symbol}_${positionSide}`;
+    if (executionType === 'TRADE') {
+      if (!this.positionPnl.has(posKey)) {
+        this.positionPnl.set(posKey, { commission: 0, realisedProfit: 0 });
+      }
+      const tracker = this.positionPnl.get(posKey);
+      tracker.commission += commissionAmount;
+      tracker.realisedProfit += realizedProfit;
+    }
 
     // Use avgPrice if filled, otherwise use originalPrice for pending orders
     const finalPrice = avgPrice > 0 ? avgPrice : originalPrice;
+
+    // For close orders, use accumulated net PNL (realisedProfit - commission)
+    const isClosing = isReduceOnly || (positionSide === 'LONG' && side === 'SELL') || (positionSide === 'SHORT' && side === 'BUY');
+    const tracker = this.positionPnl.get(posKey);
+    const netPnl = (isClosing && tracker) ? (tracker.realisedProfit - tracker.commission) : realizedProfit;
 
     const orderData = {
       symbol: symbol,
@@ -149,7 +171,7 @@ class BinanceWebSocket extends EventEmitter {
       state: this.mapOrderStatus(status),
       dealVol: executedQty,
       orderType: this.mapOrderType(orderType),
-      pnl: realizedProfit
+      pnl: netPnl
     };
 
     // Check if this is a TP/SL order - only send stopOrderUpdate, not regular orderUpdate

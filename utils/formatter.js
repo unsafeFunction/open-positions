@@ -271,7 +271,7 @@ class MessageFormatter {
   static formatStopOrder(status, order) {
     const exchangeName = order.exchangeName || `Exchange ${order.exchangeId}`;
     const triggerSide = order.triggerSide; // 1 = TP, 2 = SL
-    console.log(order)
+
     let typeText = '🎯 TP/SL';
     if (triggerSide === 1) typeText = '🎯 Тейк профит';
     else if (triggerSide === 2) typeText = '🛡️ Стоп лосс';

@@ -156,6 +156,9 @@ class ExchangeManager {
 
       // Skip notification for initial snapshot (existing positions on startup)
       if (this.telegram && !data.isSnapshot) {
+        const skipOpenedNotification = this.exchangeType === 'BingX';
+        // BingX ACCOUNT_UPDATE often arrives with partial fields (0 leverage/value),
+        // so rely on ORDER_TRADE_UPDATE/TRADE_UPDATE notifications instead.
         const contractInfo = await this.getContractInfo(data.symbol);
         // For Bybit and Bitget, holdVol is already in base asset, so contractSize should be 1
         const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
@@ -165,19 +168,21 @@ class ExchangeManager {
         this.recentOrderTypes.delete(data.symbol);
         const isMarket = !recentOrderType || recentOrderType === 5 || recentOrderType === 6;
 
-        this.telegram.sendNotification('opened', {
-          ...data,
-          exchangeId: this.exchangeId,
-          exchangeName: this.exchangeName,
-          exchangeType: this.exchangeType,
-          contractSize: effectiveContractSize,
-          openedByMarket: isMarket
-        });
+        if (!skipOpenedNotification) {
+          this.telegram.sendNotification('opened', {
+            ...data,
+            exchangeId: this.exchangeId,
+            exchangeName: this.exchangeName,
+            exchangeType: this.exchangeType,
+            contractSize: effectiveContractSize,
+            openedByMarket: isMarket
+          });
+        }
       }
     }
 
     if (prevPosition && prevPosition.state === 1 && state === 3) {
-      if (this.telegram) {
+      if (this.telegram && this.exchangeType !== 'BingX') {
         this.telegram.sendNotification('closed', {
           ...prevPosition,
           ...data,
@@ -253,8 +258,8 @@ class ExchangeManager {
     }
 
     const contractInfo = await this.getContractInfo(data.symbol);
-    // For Bybit and Bitget, holdVol is already in base asset, so contractSize should be 1
-    const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget')
+    // For Bybit/Bitget/BingX, order qty is already base asset amount, so contractSize should be 1
+    const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget' || this.exchangeType === 'BingX')
       ? 1
       : contractInfo.contractSize;
     const orderData = {

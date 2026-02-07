@@ -17,6 +17,7 @@ class BingXWebSocket extends EventEmitter {
     this.listenKeyInterval = null;
     this.pingInterval = null;
     this.priceSubscriptions = new Set();
+    this.recentTradeEvents = new Map(); // dedupe ORDER_TRADE_UPDATE + TRADE_UPDATE duplicates
   }
 
   async connect() {
@@ -190,20 +191,26 @@ class BingXWebSocket extends EventEmitter {
         return;
       }
 
+      let eventType = (message.dataType || message.e || '').toString().toUpperCase();
+      if (!eventType) {
+        const firstRecord = this.extractMessageRecords(message)[0];
+        eventType = (firstRecord?.dataType || firstRecord?.e || firstRecord?.eventType || '').toString().toUpperCase();
+      }
+
       // Handle ACCOUNT_UPDATE - position changes
-      if (message.dataType === 'ACCOUNT_UPDATE' || message.e === 'ACCOUNT_UPDATE') {
+      if (eventType.includes('ACCOUNT_UPDATE')) {
         this.handleAccountUpdate(message);
         return;
       }
 
-      // Handle ORDER_TRADE_UPDATE - order changes
-      if (message.dataType === 'ORDER_TRADE_UPDATE' || message.e === 'ORDER_TRADE_UPDATE') {
-        this.handleOrderTradeUpdate(message);
+      // Handle ORDER_TRADE_UPDATE / TRADE_UPDATE - order changes
+      if (eventType.includes('ORDER_TRADE_UPDATE') || eventType.includes('TRADE_UPDATE')) {
+        this.handleOrderTradeUpdate(message, eventType);
         return;
       }
 
       // Handle ticker updates
-      if (message.dataType && message.dataType.endsWith('@ticker')) {
+      if (eventType.includes('@TICKER')) {
         this.handleTickerUpdate(message);
         return;
       }
@@ -216,23 +223,31 @@ class BingXWebSocket extends EventEmitter {
   }
 
   handleAccountUpdate(message) {
-    const data = message.a || message.data || message;
-    if (!data) return;
+    const records = this.extractMessageRecords(message);
 
-    // Position updates are in data.P or data.positions
-    const positions = data.P || data.positions || [];
-    if (!Array.isArray(positions)) return;
+    records.forEach(record => {
+      console.log(record)
+      const data = record.a || record.data?.a || record.data || record;
+      if (!data) return;
+      // Position updates are in data.P or data.positions
+      const positionsRaw = data.P || data.positions || data.p || [];
+      const positions = Array.isArray(positionsRaw) ? positionsRaw : [positionsRaw];
 
-    positions.forEach(pos => {
-      const size = parseFloat(pos.pa || pos.positionAmt || 0);
-      const positionSide = pos.ps || pos.positionSide || 'LONG';
+      positions.forEach(pos => {
+        if (!pos) return;
+        const size = parseFloat(pos.pa || pos.positionAmt || 0);
+        const inferredSide = size < 0 ? 'SHORT' : 'LONG';
+        const positionSide = (pos.ps || pos.positionSide || inferredSide).toUpperCase();
+        const symbol = pos.s || pos.symbol;
+        if (!symbol) return;
+
       const isLong = positionSide === 'LONG';
       const isoWallet = parseFloat(pos.iw || 0);
       const isIsolated = isoWallet > 0;
 
       const positionData = {
-        symbol: pos.s || pos.symbol,
-        positionId: `${pos.s || pos.symbol}_${positionSide}`,
+        symbol: symbol,
+        positionId: `${symbol}_${positionSide}`,
         holdVol: Math.abs(size),
         holdAvgPrice: parseFloat(pos.ep || pos.entryPrice || 0),
         positionType: isLong ? 1 : 2,
@@ -246,41 +261,72 @@ class BingXWebSocket extends EventEmitter {
 
       this.emit('positionUpdate', positionData);
     });
+    });
   }
 
-  handleOrderTradeUpdate(message) {
-    const data = message.o || message.data || message;
-    if (!data) return;
+  handleOrderTradeUpdate(message, eventType = '') {
+    const records = this.extractMessageRecords(message);
 
-    const orderType = (data.o || data.orderType || data.type || '').toUpperCase();
-    const symbol = data.s || data.symbol;
-    const side = (data.S || data.side || '').toUpperCase();
-    const positionSide = (data.ps || data.positionSide || '').toUpperCase();
-    const status = (data.X || data.status || '').toUpperCase();
+    records.forEach(record => {
+      const nestedOrder = record && typeof record.o === 'object' && !Array.isArray(record.o)
+        ? record.o
+        : null;
+      const nestedData = record && typeof record.data === 'object'
+        ? record.data
+        : null;
+      const data = nestedOrder || nestedData?.o || nestedData || record;
+      if (!data) return;
 
-    // Check if this is a stop order (TP/SL)
-    const isStopOrder = orderType.includes('STOP') || orderType.includes('TAKE_PROFIT');
+      const orders = Array.isArray(data) ? data : [data];
+      orders.forEach(order => {
+        if (!order || typeof order !== 'object') return;
 
-    if (isStopOrder) {
-      this.handleStopOrder(data, symbol, orderType, side, positionSide, status);
-      return;
-    }
+        const orderType = (order.o || order.orderType || order.type || '').toUpperCase();
+        const symbol = order.s || order.symbol;
+        const side = (order.S || order.side || '').toUpperCase();
+        const positionSide = (order.ps || order.positionSide || '').toUpperCase();
+        const status = (order.X || order.status || '').toUpperCase();
+        if (!symbol || !status) return;
+        const mappedOrderType = this.mapOrderType(orderType);
+        const mappedState = this.mapOrderStatus(status);
 
-    // Regular order (market or limit)
-    const orderData = {
-      symbol: symbol,
-      orderId: data.i || data.orderId,
-      vol: parseFloat(data.q || data.origQty || 0),
-      price: parseFloat(data.ap || data.avgPrice || data.p || data.price || 0),
-      side: this.mapSide(side, positionSide),
-      leverage: 0,
-      state: this.mapOrderStatus(status),
-      dealVol: parseFloat(data.z || data.cumQty || data.executedQty || 0),
-      orderType: this.mapOrderType(orderType),
-      pnl: parseFloat(data.rp || data.realizedPnl || 0)
-    };
+        // Check if this is a stop order (TP/SL)
+        const isStopOrder = orderType.includes('STOP') || orderType.includes('TAKE_PROFIT');
 
-    this.emit('orderUpdate', orderData);
+        if (isStopOrder) {
+          if (!this.shouldProcessTradeEvent(order, eventType)) return;
+          this.handleStopOrder(order, symbol, orderType, side, positionSide, status);
+          return;
+        }
+
+        // For market orders we only need the final fill.
+        if (mappedOrderType === 5 && status !== 'FILLED') return;
+        // Ignore unknown statuses for regular orders.
+        if (!mappedState) return;
+        if (!this.shouldProcessTradeEvent(order, eventType)) return;
+
+        const avgPrice = parseFloat(order.ap || order.avgPrice || 0);
+        const limitPrice = parseFloat(order.p || order.price || 0);
+        const finalPrice = avgPrice > 0 ? avgPrice : limitPrice;
+
+        // Regular order (market or limit)
+        const orderData = {
+          symbol: symbol,
+          orderId: order.i || order.orderId,
+          vol: parseFloat(order.q || order.origQty || 0),
+          price: finalPrice,
+          notionalUsd: parseFloat(order.tv || order.tradeValue || 0),
+          side: this.mapSide(side, positionSide, order),
+          leverage: 0,
+          state: mappedState,
+          dealVol: parseFloat(order.z || order.cumQty || order.executedQty || 0),
+          orderType: mappedOrderType,
+          pnl: parseFloat(order.rp || order.realizedPnl || 0)
+        };
+
+        this.emit('orderUpdate', orderData);
+      });
+    });
   }
 
   handleStopOrder(data, symbol, orderType, side, positionSide, status) {
@@ -314,10 +360,25 @@ class BingXWebSocket extends EventEmitter {
     }
   }
 
-  mapSide(side, positionSide) {
+  mapSide(side, positionSide, data = null) {
     // 1=OpenLong, 2=CloseShort, 3=OpenShort, 4=CloseLong
     const isBuy = side === 'BUY';
-    const isLong = positionSide === 'LONG';
+    const inferredPositionSide = (() => {
+      if (positionSide === 'LONG' || positionSide === 'SHORT') {
+        return positionSide;
+      }
+      const reduceOnly =
+        data?.R === true || data?.R === 'true' ||
+        data?.ro === true || data?.ro === 'true' ||
+        data?.reduceOnly === true || data?.reduceOnly === 'true';
+      // In one-way mode: BUY reduceOnly closes short; SELL reduceOnly closes long.
+      if (reduceOnly) {
+        return isBuy ? 'SHORT' : 'LONG';
+      }
+      // Default infer for opening in one-way mode.
+      return isBuy ? 'LONG' : 'SHORT';
+    })();
+    const isLong = inferredPositionSide === 'LONG';
 
     if (isBuy && isLong) return 1;     // Open Long
     if (isBuy && !isLong) return 2;    // Close Short
@@ -325,6 +386,71 @@ class BingXWebSocket extends EventEmitter {
     if (!isBuy && isLong) return 4;    // Close Long
 
     return isBuy ? 1 : 3;
+  }
+
+  shouldProcessTradeEvent(order, eventType) {
+    const orderId = order.i || order.orderId;
+    const status = (order.X || order.status || '').toUpperCase();
+    const symbol = order.s || order.symbol || '';
+    const key = `${symbol}_${orderId}_${status}`;
+
+    if (!orderId || !status) {
+      return true;
+    }
+
+    const now = Date.now();
+    const knownAt = this.recentTradeEvents.get(key);
+    if (knownAt && now - knownAt < 3000) {
+      return false;
+    }
+
+    this.recentTradeEvents.set(key, now);
+
+    // Lightweight cleanup to avoid unbounded growth.
+    if (this.recentTradeEvents.size > 500) {
+      for (const [k, ts] of this.recentTradeEvents.entries()) {
+        if (now - ts > 10000) {
+          this.recentTradeEvents.delete(k);
+        }
+      }
+    }
+
+    return true;
+  }
+
+  extractMessageRecords(message) {
+    if (!message) {
+      return [];
+    }
+
+    const roots = [];
+    if (Array.isArray(message.data)) {
+      roots.push(...message.data);
+    } else if (message.data) {
+      roots.push(message.data);
+    }
+
+    if (message.o) {
+      roots.push(message.o);
+    }
+
+    if (message.a) {
+      roots.push(message.a);
+    }
+
+    if (roots.length === 0) {
+      roots.push(message);
+    }
+
+    const records = [];
+    for (const root of roots) {
+      if (Array.isArray(root)) {
+        records.push(...root);
+      } else if (root && typeof root === 'object') {
+        records.push(root);
+      }
+    }
+    return records;
   }
 
   mapOrderType(orderType) {
