@@ -226,7 +226,6 @@ class BingXWebSocket extends EventEmitter {
     const records = this.extractMessageRecords(message);
 
     records.forEach(record => {
-      console.log(record)
       const data = record.a || record.data?.a || record.data || record;
       if (!data) return;
       // Position updates are in data.P or data.positions
