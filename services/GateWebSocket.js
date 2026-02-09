@@ -13,6 +13,7 @@ class GateWebSocket extends EventEmitter {
     this.pingInterval = null;
     this.priceSubscriptions = new Set();
     this.knownAutoOrders = new Set(); // Track known autoorder IDs to avoid duplicate notifications
+    this.lastOrderStatusById = new Map(); // orderId -> last processed Gate status (open/finished)
     this.pendingPositionUpdates = new Map(); // symbol -> latest position data
     this.positionUpdateTimers = new Map(); // symbol -> timeout id
   }
@@ -135,9 +136,20 @@ class GateWebSocket extends EventEmitter {
       if (message.event === 'update' && message.channel === 'futures.orders') {
         if (message.result && Array.isArray(message.result)) {
           message.result.forEach(order => {
-            // Process only final order updates from Gate (finished/cancelled outcomes).
-            if (order.status !== 'finished') {
+            // Gate limit-order lifecycle needs both "open" (placed) and "finished" (filled/cancelled).
+            if (order.status !== 'open' && order.status !== 'finished') {
               return;
+            }
+
+            const orderId = String(order.id);
+            const prevStatus = this.lastOrderStatusById.get(orderId);
+            if (prevStatus === order.status) {
+              return;
+            }
+            this.lastOrderStatusById.set(orderId, order.status);
+            if (this.lastOrderStatusById.size > 5000) {
+              const firstKey = this.lastOrderStatusById.keys().next().value;
+              if (firstKey) this.lastOrderStatusById.delete(firstKey);
             }
 
             const orderData = {

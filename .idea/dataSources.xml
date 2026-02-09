@@ -25,5 +25,12 @@
       </jdbc-additional-properties>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="arty_posese" uuid="fd06e9b7-be7c-4e80-8f0a-35e7ba8dc9e0">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://c6gderjfne3u74.cluster-czz5s0kz4scl.eu-west-1.rds.amazonaws.com:5432/d9tbk0jr8t4tku</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>
