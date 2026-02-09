@@ -20,6 +20,49 @@ class MessageFormatter {
     return `${parseFloat(value.toFixed(2))}$`;
   }
 
+  static calculateCoinAmount(vol, contractSize) {
+    const v = parseFloat(vol) || 0;
+    const cs = parseFloat(contractSize) || 1;
+    return v * cs;
+  }
+
+  static formatCoinAmount(value) {
+    const num = parseFloat(value) || 0;
+    if (num === 0) return '0';
+    if (Math.abs(num) >= 1) return parseFloat(num.toFixed(4)).toString();
+    return parseFloat(num.toFixed(8)).toString();
+  }
+
+  static extractBaseAsset(symbol = '') {
+    if (!symbol) return '';
+    if (symbol.includes('_')) return symbol.split('_')[0];
+    if (symbol.includes('-')) return symbol.split('-')[0];
+    if (symbol.includes('/')) return symbol.split('/')[0];
+    if (symbol.includes(':')) return symbol.split(':')[0];
+
+    const knownQuotes = ['USDT', 'USDC', 'BUSD', 'FDUSD', 'TUSD', 'DAI', 'USD'];
+    for (const quote of knownQuotes) {
+      if (symbol.endsWith(quote) && symbol.length > quote.length) {
+        return symbol.slice(0, -quote.length);
+      }
+    }
+    return symbol;
+  }
+
+  static shouldShowCoinAmount(position) {
+    return true;
+  }
+
+  static formatVolumeWithCoin(valueUsd, item, vol, contractSize) {
+    const usd = this.formatDollarValue(valueUsd);
+    if (!this.shouldShowCoinAmount(item)) {
+      return usd;
+    }
+    const coins = this.calculateCoinAmount(vol, contractSize);
+    const base = this.extractBaseAsset(item?.symbol || '');
+    return `${usd} (${this.formatCoinAmount(coins)} ${base})`;
+  }
+
   static getExchangeUrl(exchangeType, symbol) {
     const urlGenerator = this.EXCHANGE_URLS[exchangeType];
     return urlGenerator ? urlGenerator(symbol) : null;
@@ -106,7 +149,7 @@ class MessageFormatter {
         message += `<code>${position.symbol}</code>\n`;
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
         message += `📍 <b>ТВХ:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}\n`;
-        message += `💰 <b>Объем:</b> ${this.formatDollarValue(openValue)}\n`;
+        message += `💰 <b>Объем:</b> ${this.formatVolumeWithCoin(openValue, position, position.holdVol, contractSize)}\n`;
         message += `⚡ <b>Плечо:</b> ${position.leverage}x\n`;
         message += `⚠️ <b>Ликвид:</b> ${PnLCalculator.formatPrice(Math.abs(position.liquidatePrice))}`;
         break;
@@ -125,6 +168,7 @@ class MessageFormatter {
         message += `<code>${position.symbol}</code>\n`;
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
         message += `📍 <b>Цена:</b> ${PnLCalculator.formatPrice(position.currentPrice)}\n`;
+        message += `💰 <b>Объем:</b> ${this.formatVolumeWithCoin(closedValue, position, position.holdVol, contractSize)}\n`;
         message += `${pnlEmoji} <b>PNL:</b> ${PnLCalculator.formatPnL(closedRealizedPnl)} (${pnlPercentage}%)`;
         break;
 
@@ -138,8 +182,8 @@ class MessageFormatter {
         message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
-        message += `➕ <b>Добавлено:</b> ${this.formatDollarValue(addedValue)}\n`;
-        message += `💰 <b>Новый объем:</b> ${this.formatDollarValue(newTotalValue)}\n`;
+        message += `➕ <b>Добавлено:</b> ${this.formatVolumeWithCoin(addedValue, position, addedContracts, contractSize)}\n`;
+        message += `💰 <b>Новый объем:</b> ${this.formatVolumeWithCoin(newTotalValue, position, position.holdVol, contractSize)}\n`;
         message += `📍 <b>Средняя ТВХ:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}`;
         break;
 
@@ -154,8 +198,8 @@ class MessageFormatter {
         message += `${side} (${mode})\n\n`;
         message += `<code>${position.symbol}</code>\n`;
         message += `━━━━━━━━━━━━━━━━━━━━\n`;
-        message += `➖ <b>Убрано:</b> ${this.formatDollarValue(removedValue)}\n`;
-        message += `💰 <b>Осталось:</b> ${this.formatDollarValue(remainingValue)}\n`;
+        message += `➖ <b>Убрано:</b> ${this.formatVolumeWithCoin(removedValue, position, removedContracts, contractSize)}\n`;
+        message += `💰 <b>Осталось:</b> ${this.formatVolumeWithCoin(remainingValue, position, position.holdVol, contractSize)}\n`;
         message += `📍 <b>Средняя ТВХ:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}`;
         if (partialRealizedPnl !== 0) {
           const partialPnlEmoji = partialRealizedPnl >= 0 ? '💚' : '💔';
@@ -216,7 +260,7 @@ class MessageFormatter {
     message += `<code>${order.symbol}</code>\n`;
     message += `━━━━━━━━━━━━━━━━━━━━\n`;
     message += `📍 <b>Цена:</b> ${PnLCalculator.formatPrice(order.price)}\n`;
-    message += `💰 <b>Объем:</b> ${this.formatDollarValue(orderValue)}`;
+    message += `💰 <b>Объем:</b> ${this.formatVolumeWithCoin(orderValue, order, order.vol, contractSize)}`;
 
     if (order.leverage) {
       message += `\n⚡ <b>Плечо:</b> ${order.leverage}x`;
@@ -252,7 +296,7 @@ class MessageFormatter {
     if (price > 0) {
       message += `📍 <b>Цена:</b> ${PnLCalculator.formatPrice(price)}\n`;
     }
-    message += `💰 <b>Объем:</b> ${this.formatDollarValue(orderValue)}`;
+    message += `💰 <b>Объем:</b> ${this.formatVolumeWithCoin(orderValue, order, order.vol, contractSize)}`;
 
     if (order.leverage) {
       message += `\n⚡ <b>Плечо:</b> ${order.leverage}x`;
