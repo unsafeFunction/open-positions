@@ -18,6 +18,8 @@ class BingXWebSocket extends EventEmitter {
     this.pingInterval = null;
     this.priceSubscriptions = new Set();
     this.recentTradeEvents = new Map(); // dedupe ORDER_TRADE_UPDATE + TRADE_UPDATE duplicates
+    this.latestLiqPriceBySymbol = new Map(); // symbol -> latest non-zero liq price from ACCOUNT_UPDATE
+    this.latestLiqPriceByPosition = new Map(); // `${symbol}_${LONG|SHORT}` -> latest non-zero liq price
   }
 
   async connect() {
@@ -243,6 +245,13 @@ class BingXWebSocket extends EventEmitter {
       const isLong = positionSide === 'LONG';
       const isoWallet = parseFloat(pos.iw || 0);
       const isIsolated = isoWallet > 0;
+      const rawLiq = pos.lp
+        ?? pos.liqPrice
+        ?? pos.liquidationPrice
+        ?? pos.liquidatePrice
+        ?? pos.lq
+        ?? 0;
+      const liqPrice = parseFloat(rawLiq || 0);
 
       const positionData = {
         symbol: symbol,
@@ -252,11 +261,16 @@ class BingXWebSocket extends EventEmitter {
         positionType: isLong ? 1 : 2,
         openType: isIsolated ? 1 : 2,
         leverage: parseFloat(pos.l || pos.leverage || 0),
-        liquidatePrice: parseFloat(pos.lp || pos.liquidationPrice || 0),
+        liquidatePrice: liqPrice,
         realised: parseFloat(pos.cr || pos.realisedPnl || 0),
         pnl: parseFloat(pos.up || pos.unrealizedProfit || 0),
         state: Math.abs(size) > 0 ? 1 : 3
       };
+
+      if (positionData.liquidatePrice && positionData.liquidatePrice > 0) {
+        this.latestLiqPriceBySymbol.set(symbol, positionData.liquidatePrice);
+        this.latestLiqPriceByPosition.set(`${symbol}_${positionSide}`, positionData.liquidatePrice);
+      }
 
       this.emit('positionUpdate', positionData);
     });
@@ -309,6 +323,11 @@ class BingXWebSocket extends EventEmitter {
         const finalPrice = avgPrice > 0 ? avgPrice : limitPrice;
 
         // Regular order (market or limit)
+        const liqKey = positionSide ? `${symbol}_${positionSide}` : null;
+        const liqPrice = (liqKey && this.latestLiqPriceByPosition.get(liqKey))
+          || this.latestLiqPriceBySymbol.get(symbol)
+          || 0;
+
         const orderData = {
           symbol: symbol,
           orderId: order.i || order.orderId,
@@ -320,7 +339,8 @@ class BingXWebSocket extends EventEmitter {
           state: mappedState,
           dealVol: parseFloat(order.z || order.cumQty || order.executedQty || 0),
           orderType: mappedOrderType,
-          pnl: parseFloat(order.rp || order.realizedPnl || 0)
+          pnl: parseFloat(order.rp || order.realizedPnl || 0),
+          liquidatePrice: liqPrice
         };
 
         this.emit('orderUpdate', orderData);

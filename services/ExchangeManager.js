@@ -204,10 +204,16 @@ class ExchangeManager {
     if (prevPosition && prevPosition.state === 1 && state === 1 && prevPosition.holdVol !== holdVol) {
       const isIncrease = holdVol > prevPosition.holdVol;
       const notificationType = isIncrease ? 'positionIncreased' : 'positionDecreased';
+      const expectedPositionType = data.positionType || prevPosition.positionType;
+      const resolvedLiqPrice = data.liquidatePrice
+        || prevPosition.liquidatePrice
+        || this.getOpenPositionLiqPrice(data.symbol, expectedPositionType)
+        || 0;
 
       if (this.telegram) {
         this.telegram.sendNotification(notificationType, {
           ...data,
+          liquidatePrice: resolvedLiqPrice,
           exchangeId: this.exchangeId,
           exchangeName: this.exchangeName,
           exchangeType: this.exchangeType,
@@ -229,6 +235,7 @@ class ExchangeManager {
 
       this.positions.set(key, {
         ...data,
+        liquidatePrice: data.liquidatePrice || prevPosition?.liquidatePrice || 0,
         exchangeId: this.exchangeId,
         exchangeName: this.exchangeName,
         contractSize: effectiveContractSize,
@@ -264,12 +271,30 @@ class ExchangeManager {
     const effectiveContractSize = (this.exchangeType === 'ByBit' || this.exchangeType === 'Bitget' || this.exchangeType === 'BingX')
       ? 1
       : contractInfo.contractSize;
+    const expectedPositionType = (data.side === 1 || data.side === 4) ? 1 : 2;
+    const positionsBySymbol = Array.from(this.positions.values()).filter((pos) =>
+      pos.symbol === data.symbol && pos.state === 1
+    );
+    let linkedPosition = positionsBySymbol.find((pos) =>
+      pos.symbol === data.symbol && pos.positionType === expectedPositionType && pos.state === 1
+    ) || positionsBySymbol[0];
+
+    const isOpeningOrder = data.side === 1 || data.side === 3;
+    if (!linkedPosition && this.exchangeType === 'GATE' && isOpeningOrder) {
+      linkedPosition = await this.waitForOpenPosition(data.symbol, expectedPositionType, 1200);
+    }
+    let resolvedLiqPrice = data.liquidatePrice || linkedPosition?.liquidatePrice || 0;
+    if ((this.exchangeType === 'GATE' || this.exchangeType === 'BingX') && isOpeningOrder && !resolvedLiqPrice) {
+      resolvedLiqPrice = await this.waitForLiqPrice(data.symbol, expectedPositionType, 1200);
+    }
+
     const orderData = {
       ...data,
       exchangeId: this.exchangeId,
       exchangeName: this.exchangeName,
       exchangeType: this.exchangeType,
-      contractSize: effectiveContractSize
+      contractSize: effectiveContractSize,
+      liquidatePrice: resolvedLiqPrice || 0
     };
 
     // For limit orders: notify when placed (state 2, no fills yet)
@@ -296,6 +321,52 @@ class ExchangeManager {
         this.telegram.sendNotification('limitOrderCancelled', orderData);
       }
     }
+  }
+
+  async waitForOpenPosition(symbol, expectedPositionType, timeoutMs = 1200) {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const positionsBySymbol = Array.from(this.positions.values()).filter((pos) =>
+        pos.symbol === symbol && pos.state === 1
+      );
+
+      const matched = positionsBySymbol.find((pos) => pos.positionType === expectedPositionType) || positionsBySymbol[0];
+      if (matched) {
+        return matched;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+
+    return null;
+  }
+
+  getOpenPositionLiqPrice(symbol, expectedPositionType = null) {
+    const positionsBySymbol = Array.from(this.positions.values()).filter((pos) =>
+      pos.symbol === symbol && pos.state === 1 && pos.liquidatePrice && pos.liquidatePrice > 0
+    );
+    if (positionsBySymbol.length === 0) {
+      return 0;
+    }
+    const matched = expectedPositionType
+      ? positionsBySymbol.find((pos) => pos.positionType === expectedPositionType)
+      : null;
+    return (matched || positionsBySymbol[0])?.liquidatePrice || 0;
+  }
+
+  async waitForLiqPrice(symbol, expectedPositionType, timeoutMs = 1200) {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const liq = this.getOpenPositionLiqPrice(symbol, expectedPositionType);
+      if (liq > 0) {
+        return liq;
+      }
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+
+    return 0;
   }
 
   async handleStopOrderUpdate(data) {

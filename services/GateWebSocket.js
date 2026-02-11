@@ -14,6 +14,7 @@ class GateWebSocket extends EventEmitter {
     this.priceSubscriptions = new Set();
     this.knownAutoOrders = new Set(); // Track known autoorder IDs to avoid duplicate notifications
     this.lastOrderStatusById = new Map(); // orderId -> last processed Gate status (open/finished)
+    this.latestLiqPriceBySymbol = new Map(); // symbol -> latest non-zero liq price from futures.positions
     this.pendingPositionUpdates = new Map(); // symbol -> latest position data
     this.positionUpdateTimers = new Map(); // symbol -> timeout id
   }
@@ -128,6 +129,10 @@ class GateWebSocket extends EventEmitter {
               pnl: parseFloat(position.unrealised_pnl || 0),
               state: Math.abs(size) > 0 ? 1 : 3
             };
+
+            if (positionData.liquidatePrice && positionData.liquidatePrice > 0) {
+              this.latestLiqPriceBySymbol.set(position.contract, positionData.liquidatePrice);
+            }
             this.queuePositionUpdate(position.contract, positionData);
           });
         }
@@ -162,7 +167,8 @@ class GateWebSocket extends EventEmitter {
               state: this.mapGateOrderStatus(order.status, order.finish_as),
               dealVol: Math.abs(parseFloat(order.size)) - Math.abs(parseFloat(order.left || 0)),
               orderType: this.mapGateOrderType(order.price, order.tif),
-              pnl: parseFloat(order.pnl || order.realised_pnl || 0)
+              pnl: parseFloat(order.pnl || order.realised_pnl || 0),
+              liquidatePrice: this.latestLiqPriceBySymbol.get(order.contract) || 0
             };
             this.emit('orderUpdate', orderData);
           });
@@ -284,7 +290,18 @@ class GateWebSocket extends EventEmitter {
       return;
     }
 
-    this.pendingPositionUpdates.set(symbol, positionData);
+    const prev = this.pendingPositionUpdates.get(symbol);
+    if (prev) {
+      this.pendingPositionUpdates.set(symbol, {
+        ...prev,
+        ...positionData,
+        // Gate can send burst updates where one packet has liq price and the next has 0.
+        // Keep the latest non-zero liquidation price within the debounce window.
+        liquidatePrice: positionData.liquidatePrice || prev.liquidatePrice || 0
+      });
+    } else {
+      this.pendingPositionUpdates.set(symbol, positionData);
+    }
 
     const existingTimer = this.positionUpdateTimers.get(symbol);
     if (existingTimer) {

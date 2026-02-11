@@ -185,6 +185,9 @@ class MessageFormatter {
         message += `➕ <b>Добавлено:</b> ${this.formatVolumeWithCoin(addedValue, position, addedContracts, contractSize)}\n`;
         message += `💰 <b>Новый объем:</b> ${this.formatVolumeWithCoin(newTotalValue, position, position.holdVol, contractSize)}\n`;
         message += `📍 <b>Средняя ТВХ:</b> ${PnLCalculator.formatPrice(position.holdAvgPrice)}`;
+        if (position.liquidatePrice && Math.abs(position.liquidatePrice) > 0) {
+          message += `\n⚠️ <b>Ликвид:</b> ${PnLCalculator.formatPrice(Math.abs(position.liquidatePrice))}`;
+        }
         break;
 
       case 'positionDecreased':
@@ -266,6 +269,10 @@ class MessageFormatter {
       message += `\n⚡ <b>Плечо:</b> ${order.leverage}x`;
     }
 
+    if (order.liquidatePrice && Math.abs(order.liquidatePrice) > 0) {
+      message += `\n⚠️ <b>Ликвид:</b> ${PnLCalculator.formatPrice(Math.abs(order.liquidatePrice))}`;
+    }
+
     // Показываем PNL при закрытии позиции (side 2 = закрыть шорт, side 4 = закрыть лонг)
     const isClosing = order.side === 2 || order.side === 4;
     if (isClosing && order.pnl !== undefined && order.pnl !== 0) {
@@ -300,6 +307,10 @@ class MessageFormatter {
 
     if (order.leverage) {
       message += `\n⚡ <b>Плечо:</b> ${order.leverage}x`;
+    }
+
+    if (order.liquidatePrice && Math.abs(order.liquidatePrice) > 0) {
+      message += `\n⚠️ <b>Ликвид:</b> ${PnLCalculator.formatPrice(Math.abs(order.liquidatePrice))}`;
     }
 
     // Показываем PNL при закрытии позиции (side 2 = закрыть шорт, side 4 = закрыть лонг)

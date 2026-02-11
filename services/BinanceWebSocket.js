@@ -11,6 +11,9 @@ class BinanceWebSocket extends EventEmitter {
     this.knownAlgoOrders = new Map();
     this.pendingAlgoUpdates = new Map();
     this.positionPnl = new Map(); // key: "BTCUSDT_LONG" -> { commission, realisedProfit }
+    this.latestLiqPriceBySymbol = new Map(); // symbol -> latest non-zero liq price
+    this.latestLiqPriceByPosition = new Map(); // `${symbol}_${positionSide}` -> latest non-zero liq price
+    this.positionSyncInterval = null;
   }
 
   connect() {
@@ -98,6 +101,9 @@ class BinanceWebSocket extends EventEmitter {
       const marginType = pos.marginType || pos.mt;
       const isIsolated = marginType === 'isolated';
       const positionSide = pos.positionSide || pos.ps || 'BOTH';
+      const liqPrice = parseFloat(
+        pos.liquidationPrice || pos.liqPrice || pos.lp || 0
+      );
 
       const positionData = {
         symbol: symbol,
@@ -107,11 +113,16 @@ class BinanceWebSocket extends EventEmitter {
         positionType: isLong ? 1 : 2,
         openType: isIsolated ? 1 : 2,
         leverage: 0,
-        liquidatePrice: 0,
+        liquidatePrice: liqPrice,
         realised: parseFloat(pos.realizedProfit || pos.cr || 0),
         pnl: parseFloat(pos.unrealizedProfit || pos.up || 0),
         state: size !== 0 ? 1 : 3
       };
+
+      if (liqPrice > 0) {
+        this.latestLiqPriceBySymbol.set(symbol, liqPrice);
+        this.latestLiqPriceByPosition.set(`${symbol}_${positionSide}`, liqPrice);
+      }
 
       // Reset commission tracker when position is fully closed
       if (size === 0) {
@@ -159,6 +170,9 @@ class BinanceWebSocket extends EventEmitter {
     const isClosing = isReduceOnly || (positionSide === 'LONG' && side === 'SELL') || (positionSide === 'SHORT' && side === 'BUY');
     const tracker = this.positionPnl.get(posKey);
     const netPnl = (isClosing && tracker) ? (tracker.realisedProfit - tracker.commission) : realizedProfit;
+    const liqPrice = this.latestLiqPriceByPosition.get(posKey)
+      || this.latestLiqPriceBySymbol.get(symbol)
+      || 0;
 
     const orderData = {
       symbol: symbol,
@@ -171,7 +185,8 @@ class BinanceWebSocket extends EventEmitter {
       state: this.mapOrderStatus(status),
       dealVol: executedQty,
       orderType: this.mapOrderType(orderType),
-      pnl: netPnl
+      pnl: netPnl,
+      liquidatePrice: liqPrice
     };
 
     // Check if this is a TP/SL order - only send stopOrderUpdate, not regular orderUpdate
