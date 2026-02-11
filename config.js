@@ -34,5 +34,15 @@ module.exports = {
       'http://localhost:3002',
       'http://localhost:3003',
     ]
+  },
+  telegram: {
+    autoAcceptEnabled: process.env.TELEGRAM_AUTO_ACCEPT_ENABLED === 'true',
+    mainChannelId: process.env.TELEGRAM_MAIN_CHANNEL_ID
+      ? parseInt(process.env.TELEGRAM_MAIN_CHANNEL_ID)
+      : null,
+    secondChannelId: process.env.TELEGRAM_SECOND_CHANNEL_ID
+      ? parseInt(process.env.TELEGRAM_SECOND_CHANNEL_ID)
+      : null,
+    kickCheckInterval: parseInt(process.env.TELEGRAM_KICK_CHECK_INTERVAL || '3600')
   }
 };

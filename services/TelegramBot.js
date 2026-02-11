@@ -4,14 +4,172 @@ const config = require('../config');
 
 class TelegramBotService {
   constructor(telegramConfig, getPositionsCallback = null, getExchangeStatusesCallback = null) {
-    this.bot = new TelegramBot(telegramConfig.botToken, { polling: true });
+    this.bot = new TelegramBot(telegramConfig.botToken, {
+      polling: {
+        params: {
+          allowed_updates: ['message', 'chat_join_request', 'chat_member']
+        }
+      }
+    });
     this.chatId = telegramConfig.chatId;
     this.pinnedMessageId = null;
     this.getPositions = getPositionsCallback;
     this.getExchangeStatuses = getExchangeStatusesCallback;
     this.webAppUrl = config.webapp?.url;
     this.messageTracker = new Map();
+
+    // Access control properties
+    this.autoAcceptEnabled = config.telegram?.autoAcceptEnabled || false;
+    this.mainChannelId = config.telegram?.mainChannelId || null;
+    this.secondChannelId = config.telegram?.secondChannelId || null;
+    this.accessControlEnabled = this.autoAcceptEnabled && !!this.mainChannelId && !!this.secondChannelId;
+    this.kickCheckInterval = config.telegram?.kickCheckInterval || 3600;
+
+    // Initialize access control if enabled
+    if (this.accessControlEnabled) {
+      this.setupAccessControl();
+    } else {
+      if (!this.autoAcceptEnabled) {
+        console.log('[Telegram] Access control DISABLED (TELEGRAM_AUTO_ACCEPT_ENABLED=false)');
+      } else if (!this.mainChannelId || !this.secondChannelId) {
+        console.log('[Telegram] Access control not configured (channel IDs not set in .env)');
+      }
+    }
   }
+
+  // ============================================
+  // ACCESS CONTROL METHODS
+  // ============================================
+
+  setupAccessControl() {
+    console.log(`[Access Control] ===== INITIALIZING =====`);
+    console.log(`[Access Control] Auto-accept: ENABLED`);
+    console.log(`[Access Control] Main channel (paid members): ${this.mainChannelId}`);
+    console.log(`[Access Control] Second channel (join requests): ${this.secondChannelId}`);
+
+    // Debug: Log ALL updates to see what we're receiving
+    this.bot.on('update', (update) => {
+      console.log('[Access Control] Received update type:', Object.keys(update).filter(k => k !== 'update_id'));
+    });
+
+    // Listen for join requests (requires Bot API 5.5+)
+    this.bot.on('chat_join_request', (joinRequest) => {
+      console.log('[Access Control] ✓ chat_join_request event received!');
+      this.handleJoinRequest(joinRequest);
+    });
+
+    // Listen for chat member updates (requires Bot API 5.1+)
+    this.bot.on('chat_member', (update) => {
+      console.log('[Access Control] ✓ chat_member event received!');
+      this.handleChatMemberUpdate(update);
+    });
+
+    console.log('[Access Control] Event listeners registered');
+    console.log('[Access Control] ===== READY =====');
+    console.log('[Access Control] NOTE: Only NEW join requests (after bot start) will be processed');
+    console.log('[Access Control] For existing pending requests, users need to cancel and re-request');
+  }
+
+  async handleJoinRequest(joinRequest) {
+    console.log('[Access Control] ===== JOIN REQUEST RECEIVED =====');
+    console.log('[Access Control] Request chat ID:', joinRequest.chat.id);
+    console.log('[Access Control] Our second channel ID:', this.secondChannelId);
+
+    // Only handle requests for our second channel
+    if (joinRequest.chat.id !== this.secondChannelId) {
+      console.log('[Access Control] Ignoring - not our second channel');
+      return;
+    }
+
+    const user = joinRequest.from;
+    const userTag = `${user.first_name} (ID: ${user.id})`;
+    console.log(`[Access Control] Processing join request from ${userTag}`);
+
+    try {
+      await this.checkAndResolve(user.id, userTag);
+    } catch (error) {
+      console.error(`[Access Control] ERROR processing ${userTag}:`, error.message);
+      console.error('[Access Control] Full error:', error);
+    }
+  }
+
+  async checkAndResolve(userId, userTag) {
+    const allowedStatuses = ['member', 'administrator', 'creator'];
+
+    console.log(`[Access Control] Checking ${userTag} membership in main channel ${this.mainChannelId}...`);
+
+    try {
+      const member = await this.bot.getChatMember(this.mainChannelId, userId);
+      console.log(`[Access Control] User status in main channel: ${member.status}`);
+
+      if (allowedStatuses.includes(member.status)) {
+        console.log(`[Access Control] ✓ User is ${member.status}, approving...`);
+        await this.bot.approveChatJoinRequest(this.secondChannelId, userId);
+        console.log(`[Access Control] ✅ APPROVED ${userTag} – member of main channel`);
+      } else {
+        console.log(`[Access Control] ✗ User status '${member.status}' not allowed, declining...`);
+        await this.bot.declineChatJoinRequest(this.secondChannelId, userId);
+        console.log(`[Access Control] ❌ DECLINED ${userTag} – status '${member.status}' in main channel`);
+      }
+    } catch (error) {
+      console.log(`[Access Control] Error checking membership: ${error.message}`);
+
+      // If user is not a participant in main channel, decline
+      if (error.message.includes('USER_NOT_PARTICIPANT') || error.message.includes('user not found')) {
+        console.log(`[Access Control] ✗ User not found in main channel, declining...`);
+        await this.bot.declineChatJoinRequest(this.secondChannelId, userId);
+        console.log(`[Access Control] ❌ DECLINED ${userTag} – not in main channel`);
+      } else {
+        console.error('[Access Control] Unexpected error:', error);
+        throw error;
+      }
+    }
+  }
+
+  async kickFromSecond(userId, userTag) {
+    try {
+      await this.bot.banChatMember(this.secondChannelId, userId);
+      await this.bot.unbanChatMember(this.secondChannelId, userId);
+      console.log(`[Access Control] KICKED ${userTag} from second channel`);
+      return true;
+    } catch (error) {
+      if (error.message.includes('USER_NOT_PARTICIPANT') || error.message.includes('user not found')) {
+        console.log(`[Access Control] ${userTag} already not in second channel, skip`);
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async handleChatMemberUpdate(update) {
+    // Only monitor main channel
+    if (update.chat.id !== this.mainChannelId) return;
+
+    const oldMember = update.old_chat_member;
+    const newMember = update.new_chat_member;
+
+    if (!oldMember || !newMember) return;
+
+    const activeStatuses = ['member', 'administrator', 'creator'];
+    const wasActive = activeStatuses.includes(oldMember.status);
+    const isActive = activeStatuses.includes(newMember.status);
+
+    if (wasActive && !isActive) {
+      const user = newMember.user;
+      const userTag = `${user.first_name} (ID: ${user.id})`;
+      console.log(`[Access Control] User left main channel: ${userTag} (was ${oldMember.status}, now ${newMember.status})`);
+
+      try {
+        await this.kickFromSecond(user.id, userTag);
+      } catch (error) {
+        console.error(`[Access Control] Error auto-kicking ${userTag}:`, error.message);
+      }
+    }
+  }
+
+  // ============================================
+  // POSITION TRACKING METHODS
+  // ============================================
 
   getPositionKey(position) {
     return `pos_${position.symbol}_${position.positionId}`;
